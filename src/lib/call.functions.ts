@@ -419,7 +419,7 @@ export const createDispatchPixPayment = createServerFn({ method: "POST" })
       .select("id, status, amount_cents, qr_code, qr_code_base64, ticket_url")
       .eq("session_id", data.sessionId)
       .eq("kind", "dispatch")
-      .in("status", ["pending", "in_process", "approved"])
+      .in("status", ["pending", "processing", "in_process", "under_review", "approved"])
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
