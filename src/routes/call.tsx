@@ -216,7 +216,8 @@ function CallPage() {
       streamRef.current = stream;
 
       // Start server session with consent flag + IP-derived geo
-      const { sessionId: sid } = await startCallFn({ data: { consent } });
+      const { sessionId: sid } = await startCallFn({ data: { consent: true } });
+
       setSessionId(sid);
       sessionIdRef.current = sid;
 
