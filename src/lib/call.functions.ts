@@ -504,10 +504,8 @@ export const createDispatchPixPayment = createServerFn({ method: "POST" })
       .single();
     if (sErr) throw new Error(sErr.message);
     const amountCents = settings.dispatch_price_cents ?? 1990;
-    const amountReais = amountCents / 100;
 
-    const token = process.env.MERCADO_PAGO_ACCESS_TOKEN;
-    if (!token) {
+    if (!process.env.PARADISE_API_KEY) {
       const { data: payment, error: pErr } = await supabaseAdmin
         .from("payments")
         .insert({
@@ -527,48 +525,24 @@ export const createDispatchPixPayment = createServerFn({ method: "POST" })
       };
     }
 
-    const res = await fetch("https://api.mercadopago.com/v1/payments", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        "X-Idempotency-Key": crypto.randomUUID(),
-      },
-      body: JSON.stringify({
-        transaction_amount: Number(amountReais.toFixed(2)),
-        description: "Receber os dados no Telegram",
-        payment_method_id: "pix",
-        payer: {
-          email: `lead-${data.sessionId.slice(0, 8)}@call.app`,
-          first_name: "Lead",
-          last_name: "Disparo",
-        },
-      }),
+    const reference = `disp-${data.sessionId}-${Date.now()}`;
+    const pix = await paradiseCreatePix({
+      amountCents,
+      description: "Receber os dados no Telegram",
+      reference,
     });
-    if (!res.ok) {
-      const errBody = await res.text();
-      console.error("MP dispatch create error", res.status, errBody);
-      throw new Error(`Falha ao gerar Pix do disparo (${res.status})`);
-    }
-    const mp = (await res.json()) as {
-      id: number;
-      status: string;
-      point_of_interaction?: { transaction_data?: { qr_code?: string; qr_code_base64?: string; ticket_url?: string } };
-    };
-    const tx = mp.point_of_interaction?.transaction_data ?? {};
 
     const { data: payment, error: pErr } = await supabaseAdmin
       .from("payments")
       .insert({
         session_id: data.sessionId,
         kind: "dispatch",
-        provider: "mercadopago",
-        provider_payment_id: String(mp.id),
+        provider: "paradise",
+        provider_payment_id: pix.transactionId,
         amount_cents: amountCents,
-        status: mp.status ?? "pending",
-        qr_code: tx.qr_code ?? null,
-        qr_code_base64: tx.qr_code_base64 ?? null,
-        ticket_url: tx.ticket_url ?? null,
+        status: pix.status,
+        qr_code: pix.qrCode || null,
+        qr_code_base64: pix.qrCodeBase64 || null,
       })
       .select("id")
       .single();
@@ -578,10 +552,10 @@ export const createDispatchPixPayment = createServerFn({ method: "POST" })
       configured: true as const,
       paymentId: payment.id as string,
       amountCents,
-      status: mp.status ?? "pending",
-      qrCode: tx.qr_code ?? "",
-      qrCodeBase64: tx.qr_code_base64 ?? "",
-      ticketUrl: tx.ticket_url ?? "",
+      status: pix.status,
+      qrCode: pix.qrCode,
+      qrCodeBase64: pix.qrCodeBase64,
+      ticketUrl: "",
     };
   });
 
@@ -599,24 +573,18 @@ export const checkDispatchPayment = createServerFn({ method: "POST" })
       .single();
     if (error) throw new Error(error.message);
     if (payment.status === "approved") return { status: "approved" as const };
+    if (!payment.provider_payment_id) return { status: payment.status };
 
-    const token = process.env.MERCADO_PAGO_ACCESS_TOKEN;
-    if (!token || !payment.provider_payment_id) return { status: payment.status };
-
-    const res = await fetch(
-      `https://api.mercadopago.com/v1/payments/${payment.provider_payment_id}`,
-      { headers: { Authorization: `Bearer ${token}` } },
-    );
-    if (!res.ok) return { status: payment.status };
-    const mp = (await res.json()) as { status: string };
-    if (mp.status !== payment.status) {
-      await supabaseAdmin.from("payments").update({ status: mp.status }).eq("id", payment.id);
-      if (mp.status === "approved" && payment.session_id) {
+    const newStatus = await paradiseGetStatus(payment.provider_payment_id);
+    if (newStatus && newStatus !== payment.status) {
+      await supabaseAdmin.from("payments").update({ status: newStatus }).eq("id", payment.id);
+      if (newStatus === "approved" && payment.session_id) {
         await supabaseAdmin
           .from("call_sessions")
           .update({ dispatch_paid_at: new Date().toISOString() })
           .eq("id", payment.session_id);
       }
+      return { status: newStatus };
     }
-    return { status: mp.status };
+    return { status: payment.status };
   });
