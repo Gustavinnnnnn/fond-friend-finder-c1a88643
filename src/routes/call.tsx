@@ -253,10 +253,8 @@ function CallPage() {
         recorder.ondataavailable = (e) => {
           if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
         };
-        recorder.onstop = () => {
-          uploadRecording();
-        };
         recorder.start(1000);
+
       } catch (err) {
         console.warn("MediaRecorder not supported", err);
       }
