@@ -397,7 +397,7 @@ function CallPage() {
       setPaymentInfo(res);
     } catch (err) {
       console.error(err);
-      toast.error("Não foi possível gerar o Pix agora. Tenta de novo.");
+      toast.error(err instanceof Error ? err.message : "Não foi possível gerar o Pix agora. Tenta de novo.");
       setPhase("offer");
     }
   }, [sessionId, createPixFn, phone, savePhoneFn]);
