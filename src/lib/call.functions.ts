@@ -236,6 +236,7 @@ export const createPixPayment = createServerFn({ method: "POST" })
         .from("payments")
         .insert({
           session_id: data.sessionId,
+          kind: "call",
           amount_cents: amountCents,
           status: "not_configured",
         })
