@@ -19,7 +19,7 @@ export const getDashboard = createServerFn({ method: "POST" })
     const { data: sessions, error: sErr } = await supabaseAdmin
       .from("call_sessions")
       .select(
-        "id, status, created_at, free_ended_at, paid_at, completed_at, ip, user_agent, geo_lat, geo_lng, geo_accuracy, geo_city, geo_region, geo_country, consent_recording, recording_path, has_paid",
+        "id, status, created_at, free_ended_at, paid_at, completed_at, ip, user_agent, geo_lat, geo_lng, geo_accuracy, geo_city, geo_region, geo_country, consent_recording, recording_path, has_paid, telegram_chat_id, telegram_username, telegram_sent_at, phone, dispatch_hangup_sent_at, dispatch_no_payment_sent_at, dispatch_post_payment_sent_at, dispatch_scheduled_at, dispatch_reason",
       )
       .order("created_at", { ascending: false })
       .limit(200);
@@ -61,7 +61,9 @@ export const getAdminSettings = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data, error } = await supabaseAdmin
       .from("settings")
-      .select("model_name, model_photo_url, video_url, free_duration_seconds, price_cents, offer_title, offer_subtitle, contact_url, telegram_bot_username, telegram_copy_template, telegram_purchase_url")
+      .select(
+        "model_name, model_photo_url, video_url, free_duration_seconds, price_cents, offer_title, offer_subtitle, contact_url, telegram_bot_username, telegram_copy_template, telegram_purchase_url, start_photo_url, start_video_url, start_message, start_button_text, mini_app_url, dispatch_copy_hangup, dispatch_copy_no_payment, dispatch_copy_post_payment",
+      )
       .eq("id", 1)
       .single();
     if (error) throw new Error(error.message);
@@ -80,6 +82,8 @@ export const getAdminSettings = createServerFn({ method: "POST" })
       ...data,
       model_photo_preview_url: await signMedia(data.model_photo_url),
       video_preview_url: await signMedia(data.video_url),
+      start_photo_preview_url: await signMedia(data.start_photo_url),
+      start_video_preview_url: await signMedia(data.start_video_url),
     };
   });
 
@@ -97,8 +101,15 @@ export const updateAdminSettings = createServerFn({ method: "POST" })
         offer_subtitle: z.string().min(1).max(240),
         contact_url: z.string().nullable(),
         telegram_bot_username: z.string().max(64).nullable(),
-        telegram_copy_template: z.string().min(1).max(4000),
         telegram_purchase_url: z.string().max(500).nullable(),
+        start_photo_url: z.string().nullable(),
+        start_video_url: z.string().nullable(),
+        start_message: z.string().min(1).max(4000),
+        start_button_text: z.string().min(1).max(64),
+        mini_app_url: z.string().max(500).nullable(),
+        dispatch_copy_hangup: z.string().min(1).max(4000),
+        dispatch_copy_no_payment: z.string().min(1).max(4000),
+        dispatch_copy_post_payment: z.string().min(1).max(4000),
       })
       .parse(data),
   )
@@ -120,8 +131,14 @@ export const updateAdminSettings = createServerFn({ method: "POST" })
 
 export const getAdminMediaUploadUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: { kind: "video" | "photo"; ext: string }) =>
-    z.object({ kind: z.enum(["video", "photo"]), ext: z.string().max(10) }).parse(data),
+  .inputValidator(
+    (data: { kind: "video" | "photo" | "start_photo" | "start_video"; ext: string }) =>
+      z
+        .object({
+          kind: z.enum(["video", "photo", "start_photo", "start_video"]),
+          ext: z.string().max(10),
+        })
+        .parse(data),
   )
   .handler(async ({ data, context }) => {
     const { data: isAdmin, error: roleError } = await context.supabase.rpc("has_role", {
@@ -131,7 +148,8 @@ export const getAdminMediaUploadUrl = createServerFn({ method: "POST" })
     if (roleError) throw new Error(roleError.message);
     if (!isAdmin) throw new Error("Forbidden");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const cleanExt = data.ext.replace(/[^a-z0-9]/gi, "") || (data.kind === "video" ? "mp4" : "jpg");
+    const isVideo = data.kind === "video" || data.kind === "start_video";
+    const cleanExt = data.ext.replace(/[^a-z0-9]/gi, "") || (isVideo ? "mp4" : "jpg");
     const path = `${data.kind}/${Date.now()}-${crypto.randomUUID()}.${cleanExt}`;
     const { data: signed, error } = await supabaseAdmin.storage
       .from("media")
