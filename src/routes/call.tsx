@@ -675,6 +675,16 @@ function CallPage() {
           />
           <div className="text-xl font-semibold">Chamada encerrada</div>
           <div className="text-sm text-white/60">Duração {formatTime(elapsed)}</div>
+          {settings?.telegram_bot_username && sessionId ? (
+            <a
+              href={`https://t.me/${settings.telegram_bot_username.replace(/^@/, "")}?start=${sessionId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-4 flex items-center gap-2 rounded-full border-2 border-sky-400 bg-sky-500/10 px-6 py-4 text-base font-semibold text-sky-300"
+            >
+              <Send className="h-5 w-5" /> Receber meus dados no Telegram
+            </a>
+          ) : null}
           {settings?.contact_url ? (
             <a
               href={settings.contact_url}
