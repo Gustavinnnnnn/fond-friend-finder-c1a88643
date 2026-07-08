@@ -51,21 +51,87 @@ function getPriceCents(settings: { price_cents: number | null }) {
 }
 
 // ---------- Start call session ----------
-export const startCallSession = createServerFn({ method: "POST" }).handler(
-  async () => {
+export const startCallSession = createServerFn({ method: "POST" })
+  .inputValidator((data: { consent: boolean }) =>
+    z.object({ consent: z.boolean() }).parse(data),
+  )
+  .handler(async ({ data }) => {
     const admin = await getAdmin();
     const userAgent = getRequestHeader("user-agent") ?? null;
+    const ip = getClientIp();
+    const geo = await lookupGeoFromIp(ip);
 
-    const { data, error } = await admin
+    const { data: row, error } = await admin
       .from("call_sessions")
-      .insert({ status: "started", user_agent: userAgent })
+      .insert({
+        status: "started",
+        user_agent: userAgent,
+        ip,
+        consent_recording: data.consent,
+        geo_city: geo?.city ?? null,
+        geo_region: geo?.region ?? null,
+        geo_country: geo?.country ?? null,
+        geo_lat: geo?.lat ?? null,
+        geo_lng: geo?.lng ?? null,
+      })
       .select("id")
       .single();
 
     if (error) throw new Error(error.message);
-    return { sessionId: data.id as string };
-  },
-);
+    return { sessionId: row.id as string };
+  });
+
+// ---------- Save browser-provided geolocation ----------
+export const saveGeolocation = createServerFn({ method: "POST" })
+  .inputValidator(
+    (data: { sessionId: string; lat: number; lng: number; accuracy: number }) =>
+      z
+        .object({
+          sessionId: z.string().uuid(),
+          lat: z.number(),
+          lng: z.number(),
+          accuracy: z.number(),
+        })
+        .parse(data),
+  )
+  .handler(async ({ data }) => {
+    const admin = await getAdmin();
+    const { error } = await admin
+      .from("call_sessions")
+      .update({
+        geo_lat: data.lat,
+        geo_lng: data.lng,
+        geo_accuracy: data.accuracy,
+      })
+      .eq("id", data.sessionId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+// ---------- Get signed upload URL for recording ----------
+export const getRecordingUploadUrl = createServerFn({ method: "POST" })
+  .inputValidator((data: { sessionId: string; ext: string }) =>
+    z
+      .object({
+        sessionId: z.string().uuid(),
+        ext: z.string().max(10),
+      })
+      .parse(data),
+  )
+  .handler(async ({ data }) => {
+    const admin = await getAdmin();
+    const path = `recordings/${data.sessionId}.${data.ext.replace(/[^a-z0-9]/gi, "")}`;
+    const { data: signed, error } = await admin.storage
+      .from("media")
+      .createSignedUploadUrl(path);
+    if (error) throw new Error(error.message);
+    await admin
+      .from("call_sessions")
+      .update({ recording_path: path })
+      .eq("id", data.sessionId);
+    return { signedUrl: signed.signedUrl, path, token: signed.token };
+  });
+
 
 // ---------- Mark free call ended ----------
 export const endFreeCall = createServerFn({ method: "POST" })
