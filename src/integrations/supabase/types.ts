@@ -21,6 +21,7 @@ export type Database = {
           created_at: string
           dispatch_hangup_sent_at: string | null
           dispatch_no_payment_sent_at: string | null
+          dispatch_paid_at: string | null
           dispatch_post_payment_sent_at: string | null
           dispatch_reason: string | null
           dispatch_scheduled_at: string | null
@@ -51,6 +52,7 @@ export type Database = {
           created_at?: string
           dispatch_hangup_sent_at?: string | null
           dispatch_no_payment_sent_at?: string | null
+          dispatch_paid_at?: string | null
           dispatch_post_payment_sent_at?: string | null
           dispatch_reason?: string | null
           dispatch_scheduled_at?: string | null
@@ -81,6 +83,7 @@ export type Database = {
           created_at?: string
           dispatch_hangup_sent_at?: string | null
           dispatch_no_payment_sent_at?: string | null
+          dispatch_paid_at?: string | null
           dispatch_post_payment_sent_at?: string | null
           dispatch_reason?: string | null
           dispatch_scheduled_at?: string | null
@@ -112,6 +115,7 @@ export type Database = {
           amount_cents: number
           created_at: string
           id: string
+          kind: string
           provider: string
           provider_payment_id: string | null
           qr_code: string | null
@@ -125,6 +129,7 @@ export type Database = {
           amount_cents: number
           created_at?: string
           id?: string
+          kind?: string
           provider?: string
           provider_payment_id?: string | null
           qr_code?: string | null
@@ -138,6 +143,7 @@ export type Database = {
           amount_cents?: number
           created_at?: string
           id?: string
+          kind?: string
           provider?: string
           provider_payment_id?: string | null
           qr_code?: string | null
@@ -164,6 +170,7 @@ export type Database = {
           dispatch_copy_hangup: string
           dispatch_copy_no_payment: string
           dispatch_copy_post_payment: string
+          dispatch_price_cents: number
           free_duration_seconds: number
           id: number
           mini_app_url: string | null
@@ -188,6 +195,7 @@ export type Database = {
           dispatch_copy_hangup?: string
           dispatch_copy_no_payment?: string
           dispatch_copy_post_payment?: string
+          dispatch_price_cents?: number
           free_duration_seconds?: number
           id?: number
           mini_app_url?: string | null
@@ -212,6 +220,7 @@ export type Database = {
           dispatch_copy_hangup?: string
           dispatch_copy_no_payment?: string
           dispatch_copy_post_payment?: string
+          dispatch_price_cents?: number
           free_duration_seconds?: number
           id?: number
           mini_app_url?: string | null
