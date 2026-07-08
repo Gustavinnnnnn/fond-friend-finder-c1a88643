@@ -272,7 +272,8 @@ function CallPage() {
       console.error(err);
       setPhase("denied");
     }
-  }, [settings, consent, startCallFn, saveGeoFn, uploadRecording]);
+  }, [settings, startCallFn, saveGeoFn, uploadRecording]);
+
 
   // Mic toggle (kept enabled for recorder even when muted for the call)
   const toggleMic = useCallback(() => {
