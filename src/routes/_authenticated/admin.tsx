@@ -598,6 +598,8 @@ function LocationsView({ sessions }: { sessions: Session[] }) {
 function SettingsView({
   settings,
   setSettings,
+  photoPreviewUrl,
+  videoPreviewUrl,
   saving,
   uploading,
   onSave,
@@ -605,6 +607,8 @@ function SettingsView({
 }: {
   settings: Settings | null;
   setSettings: React.Dispatch<React.SetStateAction<Settings | null>>;
+  photoPreviewUrl: string | null;
+  videoPreviewUrl: string | null;
   saving: boolean;
   uploading: "video" | "photo" | null;
   onSave: () => void;
@@ -621,9 +625,9 @@ function SettingsView({
           <div>
             <div className="mb-2 text-xs text-white/60">Foto</div>
             <div className="relative h-24 w-24 overflow-hidden rounded-full bg-neutral-800">
-              {settings.model_photo_url ? (
+              {photoPreviewUrl ? (
                 <img
-                  src={settings.model_photo_url}
+                  src={photoPreviewUrl}
                   alt="Foto"
                   className="h-full w-full object-cover"
                 />
@@ -669,9 +673,9 @@ function SettingsView({
 
       <Card className="border-neutral-800 bg-neutral-900 p-5 text-white">
         <h2 className="mb-4 text-lg font-semibold">Vídeo da modelo</h2>
-        {settings.video_url ? (
+        {videoPreviewUrl ? (
           <video
-            src={settings.video_url}
+            src={videoPreviewUrl}
             controls
             className="mb-3 aspect-video w-full rounded-lg bg-black"
           />
