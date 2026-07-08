@@ -2,17 +2,6 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-const settingsSchema = z.object({
-  model_name: z.string().min(1).max(80),
-  model_photo_url: z.string().nullable(),
-  video_url: z.string().nullable(),
-  free_duration_seconds: z.number().int().min(1).max(3600),
-  price_cents: z.number().int().min(0).max(1000000),
-  offer_title: z.string().min(1).max(120),
-  offer_subtitle: z.string().min(1).max(240),
-  contact_url: z.string().nullable(),
-});
-
 // ---------- Dashboard stats ----------
 export const getDashboard = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -96,7 +85,20 @@ export const getAdminSettings = createServerFn({ method: "POST" })
 
 export const updateAdminSettings = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: unknown) => settingsSchema.parse(data))
+  .inputValidator((data: unknown) =>
+    z
+      .object({
+        model_name: z.string().min(1).max(80),
+        model_photo_url: z.string().nullable(),
+        video_url: z.string().nullable(),
+        free_duration_seconds: z.number().int().min(1).max(3600),
+        price_cents: z.number().int().min(0).max(1000000),
+        offer_title: z.string().min(1).max(120),
+        offer_subtitle: z.string().min(1).max(240),
+        contact_url: z.string().nullable(),
+      })
+      .parse(data),
+  )
   .handler(async ({ data, context }) => {
     const { data: isAdmin, error: roleError } = await context.supabase.rpc("has_role", {
       _user_id: context.userId,
