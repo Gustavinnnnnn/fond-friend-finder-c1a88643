@@ -39,15 +39,15 @@ export function invalidateRuntimeCredentialsCache() {
 }
 
 export async function getParadiseApiKey(): Promise<string | null> {
-  const envKey = process.env.PARADISE_API_KEY?.trim();
-  if (envKey) return envKey;
   const { paradise } = await getCreds();
-  return paradise?.trim() || null;
+  const dbKey = paradise?.trim();
+  if (dbKey) return dbKey;
+  return process.env.PARADISE_API_KEY?.trim() || null;
 }
 
 export async function getTelegramBotToken(): Promise<string | null> {
-  const envKey = process.env.TELEGRAM_BOT_TOKEN?.trim();
-  if (envKey) return envKey;
   const { telegram } = await getCreds();
-  return telegram?.trim() || null;
+  const dbToken = telegram?.trim();
+  if (dbToken) return dbToken;
+  return process.env.TELEGRAM_BOT_TOKEN?.trim() || null;
 }
