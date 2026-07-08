@@ -293,19 +293,21 @@ function CallPage() {
   }, [camOn]);
 
   const finalize = useCallback(async () => {
-    // stop recorder first so onstop uploads
+    // stop recorder and WAIT for it to flush its last chunks
     const rec = recorderRef.current;
     if (rec && rec.state !== "inactive") {
-      try {
-        rec.stop();
-      } catch {
-        /* noop */
-      }
-    } else {
-      uploadRecording();
+      await new Promise<void>((resolve) => {
+        rec.addEventListener("stop", () => resolve(), { once: true });
+        try {
+          rec.requestData();
+          rec.stop();
+        } catch {
+          resolve();
+        }
+      });
     }
-    // Give the recorder a tick to flush
-    await new Promise((r) => setTimeout(r, 200));
+    // upload synchronously so hangUp actually persists the file
+    await uploadRecording();
     streamRef.current?.getTracks().forEach((t) => t.stop());
     modelVideoRef.current?.pause();
     const sid = sessionIdRef.current;
@@ -313,6 +315,7 @@ function CallPage() {
       await completeFn({ data: { sessionId: sid } }).catch(console.error);
     }
   }, [completeFn, uploadRecording]);
+
 
   const hangUp = useCallback(async () => {
     await finalize();
