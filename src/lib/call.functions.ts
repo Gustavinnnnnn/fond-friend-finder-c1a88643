@@ -229,7 +229,9 @@ export const createPixPayment = createServerFn({ method: "POST" })
     });
     const session = Array.isArray(sessionRows) ? sessionRows[0] : null;
 
-    if (!process.env.PARADISE_API_KEY) {
+    const { getParadiseApiKey } = await import("@/lib/runtime-credentials.server");
+    const paradiseApiKey = await getParadiseApiKey();
+    if (!paradiseApiKey) {
       const { data: paymentId, error: pErr } = await (supabase as any).rpc("app_insert_payment", {
         _session_id: data.sessionId,
         _kind: "call",
@@ -394,7 +396,9 @@ export const createDispatchPixPayment = createServerFn({ method: "POST" })
     });
     const session = Array.isArray(sessionRows) ? sessionRows[0] : null;
 
-    if (!process.env.PARADISE_API_KEY) {
+    const { getParadiseApiKey } = await import("@/lib/runtime-credentials.server");
+    const paradiseApiKey = await getParadiseApiKey();
+    if (!paradiseApiKey) {
       const { data: paymentId, error: pErr } = await (supabase as any).rpc("app_insert_payment", {
         _session_id: data.sessionId,
         _kind: "dispatch",
