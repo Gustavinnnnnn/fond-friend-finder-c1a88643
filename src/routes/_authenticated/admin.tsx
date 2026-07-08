@@ -430,6 +430,10 @@ function AdminPage() {
                 />
               ) : null}
 
+              {section === "dispatches" ? (
+                <DispatchesView sessions={sessions} onReload={loadDashboard} />
+              ) : null}
+
               {section === "payments" ? (
                 <PaymentsView payments={payments} sessions={sessions} />
               ) : null}
