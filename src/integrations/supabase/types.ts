@@ -14,7 +14,131 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      call_sessions: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          free_ended_at: string | null
+          id: string
+          paid_at: string | null
+          status: string
+          updated_at: string
+          user_agent: string | null
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          free_ended_at?: string | null
+          id?: string
+          paid_at?: string | null
+          status?: string
+          updated_at?: string
+          user_agent?: string | null
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          free_ended_at?: string | null
+          id?: string
+          paid_at?: string | null
+          status?: string
+          updated_at?: string
+          user_agent?: string | null
+        }
+        Relationships: []
+      }
+      payments: {
+        Row: {
+          amount_cents: number
+          created_at: string
+          id: string
+          provider: string
+          provider_payment_id: string | null
+          qr_code: string | null
+          qr_code_base64: string | null
+          session_id: string | null
+          status: string
+          ticket_url: string | null
+          updated_at: string
+        }
+        Insert: {
+          amount_cents: number
+          created_at?: string
+          id?: string
+          provider?: string
+          provider_payment_id?: string | null
+          qr_code?: string | null
+          qr_code_base64?: string | null
+          session_id?: string | null
+          status?: string
+          ticket_url?: string | null
+          updated_at?: string
+        }
+        Update: {
+          amount_cents?: number
+          created_at?: string
+          id?: string
+          provider?: string
+          provider_payment_id?: string | null
+          qr_code?: string | null
+          qr_code_base64?: string | null
+          session_id?: string | null
+          status?: string
+          ticket_url?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payments_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "call_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      settings: {
+        Row: {
+          contact_url: string | null
+          created_at: string
+          free_duration_seconds: number
+          id: number
+          model_name: string
+          model_photo_url: string | null
+          offer_subtitle: string
+          offer_title: string
+          price_cents: number
+          updated_at: string
+          video_url: string | null
+        }
+        Insert: {
+          contact_url?: string | null
+          created_at?: string
+          free_duration_seconds?: number
+          id?: number
+          model_name?: string
+          model_photo_url?: string | null
+          offer_subtitle?: string
+          offer_title?: string
+          price_cents?: number
+          updated_at?: string
+          video_url?: string | null
+        }
+        Update: {
+          contact_url?: string | null
+          created_at?: string
+          free_duration_seconds?: number
+          id?: number
+          model_name?: string
+          model_photo_url?: string | null
+          offer_subtitle?: string
+          offer_title?: string
+          price_cents?: number
+          updated_at?: string
+          video_url?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
