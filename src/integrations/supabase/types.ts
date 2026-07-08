@@ -301,8 +301,19 @@ export type Database = {
     }
     Functions: {
       app_cancel_dispatch: { Args: { _session_id: string }; Returns: undefined }
+      app_clear_dispatch_queue: {
+        Args: { _clear_reason?: boolean; _session_id: string }
+        Returns: undefined
+      }
       app_complete_call: { Args: { _session_id: string }; Returns: undefined }
       app_end_free_call: { Args: { _session_id: string }; Returns: undefined }
+      app_get_abandoned_dispatches: {
+        Args: { _cutoff: string }
+        Returns: {
+          free_ended_at: string
+          id: string
+        }[]
+      }
       app_get_dispatch_payload: {
         Args: { _reason: string; _session_id: string }
         Returns: {
@@ -323,6 +334,14 @@ export type Database = {
           telegram_chat_id: number
         }[]
       }
+      app_get_due_dispatches: {
+        Args: { _now?: string }
+        Returns: {
+          dispatch_reason: string
+          id: string
+          telegram_chat_id: number
+        }[]
+      }
       app_get_existing_dispatch_payment: {
         Args: { _session_id: string }
         Returns: {
@@ -334,6 +353,7 @@ export type Database = {
           ticket_url: string
         }[]
       }
+      app_get_free_duration: { Args: never; Returns: number }
       app_get_payment_for_check: {
         Args: { _payment_id: string }
         Returns: {
