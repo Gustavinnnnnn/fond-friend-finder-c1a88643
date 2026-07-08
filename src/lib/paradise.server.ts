@@ -1,3 +1,5 @@
+import { getParadiseApiKey } from "@/lib/runtime-credentials.server";
+
 const PARADISE_BASE = "https://multi.paradisepags.com/api/v1";
 
 function stripBase64Prefix(v: string | null | undefined): string | null {
