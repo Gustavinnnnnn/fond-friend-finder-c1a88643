@@ -145,7 +145,7 @@ function PayPage() {
             {!info.configured ? (
               <p className="mt-4 rounded-xl bg-amber-500/10 p-3 text-center text-xs text-amber-200">
                 Pagamento ainda não configurado no painel. Peça pro admin ativar
-                o Mercado Pago.
+                a Paradise.
               </p>
             ) : (
               <>
