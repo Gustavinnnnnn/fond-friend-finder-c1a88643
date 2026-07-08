@@ -1069,6 +1069,58 @@ function SettingsView({
           {saving ? "Salvando…" : "Salvar tudo"}
         </Button>
       </Card>
+
+      <Card className="border-amber-500/30 bg-neutral-900 p-5 text-white">
+        <div className="mb-4 flex items-center gap-2">
+          <SettingsIcon className="h-5 w-5 text-amber-400" />
+          <h2 className="text-lg font-semibold">Credenciais das integrações</h2>
+        </div>
+        <p className="mb-4 text-xs text-white/60">
+          Cole aqui as chaves das APIs. Elas ficam salvas no banco e o sistema usa automaticamente,
+          sem precisar configurar nada na Vercel.
+        </p>
+        <div className="grid gap-4">
+          <div>
+            <Label className="text-white/80">Chave da Paradise (Pix)</Label>
+            <Input
+              type="password"
+              autoComplete="off"
+              placeholder="sk_..."
+              value={settings.paradise_api_key ?? ""}
+              onChange={(e) =>
+                setSettings({ ...settings, paradise_api_key: e.target.value.trim() || null })
+              }
+              className="mt-1 border-neutral-700 bg-neutral-800 font-mono text-sm text-white"
+            />
+            <div className="mt-1 text-xs text-white/40">
+              Pegue em <b>Paradise → API</b>. Sem essa chave o Pix não é gerado.
+            </div>
+          </div>
+          <div>
+            <Label className="text-white/80">Token do Bot do Telegram</Label>
+            <Input
+              type="password"
+              autoComplete="off"
+              placeholder="123456789:AA..."
+              value={settings.telegram_bot_token ?? ""}
+              onChange={(e) =>
+                setSettings({ ...settings, telegram_bot_token: e.target.value.trim() || null })
+              }
+              className="mt-1 border-neutral-700 bg-neutral-800 font-mono text-sm text-white"
+            />
+            <div className="mt-1 text-xs text-white/40">
+              Pegue no <b>@BotFather → /token</b>. Sem esse token os disparos não saem.
+            </div>
+          </div>
+        </div>
+        <Button
+          onClick={onSave}
+          disabled={saving}
+          className="mt-4 bg-amber-500 text-black hover:bg-amber-600"
+        >
+          {saving ? "Salvando…" : "Salvar credenciais"}
+        </Button>
+      </Card>
     </div>
   );
 }
