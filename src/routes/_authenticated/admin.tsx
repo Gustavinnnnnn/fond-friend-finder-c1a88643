@@ -2,7 +2,13 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
-import { getDashboard, getRecordingUrl } from "@/lib/admin.functions";
+import {
+  getAdminMediaUploadUrl,
+  getAdminSettings,
+  getDashboard,
+  getRecordingUrl,
+  updateAdminSettings,
+} from "@/lib/admin.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -41,6 +47,8 @@ import {
   CreditCard,
   Settings as SettingsIcon,
   Globe2,
+  Menu,
+  RefreshCw,
 } from "lucide-react";
 
 type Settings = {
@@ -52,6 +60,11 @@ type Settings = {
   offer_title: string;
   offer_subtitle: string;
   contact_url: string | null;
+};
+
+type AdminSettingsResponse = Settings & {
+  model_photo_preview_url: string | null;
+  video_preview_url: string | null;
 };
 
 type Session = {
@@ -129,9 +142,14 @@ function AdminPage() {
   const [uploading, setUploading] = useState<"video" | "photo" | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [section, setSection] = useState<Section>("dashboard");
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
+  const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>(null);
 
   const dashboardFn = useServerFn(getDashboard);
   const recordingUrlFn = useServerFn(getRecordingUrl);
+  const getSettingsFn = useServerFn(getAdminSettings);
+  const updateSettingsFn = useServerFn(updateAdminSettings);
+  const uploadUrlFn = useServerFn(getAdminMediaUploadUrl);
 
   useEffect(() => {
     (async () => {
@@ -162,28 +180,41 @@ function AdminPage() {
     }
   }, [dashboardFn]);
 
+  const loadSettings = useCallback(async () => {
+    try {
+      const data = (await getSettingsFn({})) as AdminSettingsResponse;
+      setSettings({
+        model_name: data.model_name,
+        model_photo_url: data.model_photo_url,
+        video_url: data.video_url,
+        free_duration_seconds: data.free_duration_seconds,
+        price_cents: data.price_cents,
+        offer_title: data.offer_title,
+        offer_subtitle: data.offer_subtitle,
+        contact_url: data.contact_url,
+      });
+      setPhotoPreviewUrl(data.model_photo_preview_url);
+      setVideoPreviewUrl(data.video_preview_url);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Falha ao carregar configurações";
+      toast.error(msg);
+    }
+  }, [getSettingsFn]);
+
   useEffect(() => {
     if (!isAdmin) return;
-    supabase
-      .from("settings")
-      .select("*")
-      .eq("id", 1)
-      .single()
-      .then(({ data, error }) => {
-        if (error) toast.error(error.message);
-        else setSettings(data as Settings);
-      });
+    loadSettings();
     loadDashboard();
     const iv = setInterval(loadDashboard, 15000);
     return () => clearInterval(iv);
-  }, [isAdmin, loadDashboard]);
+  }, [isAdmin, loadDashboard, loadSettings]);
 
   const handleSave = async () => {
     if (!settings) return;
     setSaving(true);
-    const { error } = await supabase
-      .from("settings")
-      .update({
+    try {
+      await updateSettingsFn({
+        data: {
         model_name: settings.model_name,
         model_photo_url: settings.model_photo_url,
         video_url: settings.video_url,
@@ -192,28 +223,34 @@ function AdminPage() {
         offer_title: settings.offer_title,
         offer_subtitle: settings.offer_subtitle,
         contact_url: settings.contact_url,
-      })
-      .eq("id", 1);
-    setSaving(false);
-    if (error) toast.error(error.message);
-    else toast.success("Configurações salvas");
+        },
+      });
+      await loadSettings();
+      toast.success("Configurações salvas");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Erro ao salvar";
+      toast.error(msg);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleUpload = async (file: File, kind: "video" | "photo") => {
     setUploading(kind);
     try {
       const ext = file.name.split(".").pop() || (kind === "video" ? "mp4" : "jpg");
-      const path = `${kind}/${Date.now()}.${ext}`;
+      const { path, token } = await uploadUrlFn({ data: { kind, ext } });
       const { error } = await supabase.storage
         .from("media")
-        .upload(path, file, { upsert: true, contentType: file.type });
+        .uploadToSignedUrl(path, token, file, { upsert: true, contentType: file.type });
       if (error) throw error;
-      const { data } = supabase.storage.from("media").getPublicUrl(path);
-      const url = data.publicUrl;
+      const localPreview = URL.createObjectURL(file);
       if (kind === "video") {
-        setSettings((prev) => (prev ? { ...prev, video_url: url } : prev));
+        setSettings((prev) => (prev ? { ...prev, video_url: path } : prev));
+        setVideoPreviewUrl(localPreview);
       } else {
-        setSettings((prev) => (prev ? { ...prev, model_photo_url: url } : prev));
+        setSettings((prev) => (prev ? { ...prev, model_photo_url: path } : prev));
+        setPhotoPreviewUrl(localPreview);
       }
       toast.success(`${kind === "video" ? "Vídeo" : "Foto"} enviado. Clique em Salvar.`);
     } catch (err) {
@@ -356,6 +393,8 @@ function AdminPage() {
                 <SettingsView
                   settings={settings}
                   setSettings={setSettings}
+                  photoPreviewUrl={photoPreviewUrl}
+                  videoPreviewUrl={videoPreviewUrl}
                   saving={saving}
                   uploading={uploading}
                   onSave={handleSave}
