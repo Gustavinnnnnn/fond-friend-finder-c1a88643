@@ -415,7 +415,7 @@ function CallPage() {
           if (status === "approved") {
             freeEndedRef.current = false;
             hasPaidRef.current = true;
-            // Cancel the scheduled "no_payment" dispatch
+            // Clear any pending dispatch marker after payment confirmation
             const sid = sessionIdRef.current;
             if (sid) cancelDispatchFn({ data: { sessionId: sid } }).catch(console.error);
             streamRef.current?.getVideoTracks().forEach((t) => (t.enabled = camOn));
