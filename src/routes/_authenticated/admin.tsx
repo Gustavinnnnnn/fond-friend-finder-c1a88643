@@ -62,6 +62,9 @@ type Settings = {
   offer_title: string;
   offer_subtitle: string;
   contact_url: string | null;
+  telegram_bot_username: string | null;
+  telegram_copy_template: string;
+  telegram_purchase_url: string | null;
 };
 
 type AdminSettingsResponse = Settings & {
@@ -87,6 +90,10 @@ type Session = {
   consent_recording: boolean;
   recording_path: string | null;
   has_paid: boolean;
+  telegram_chat_id: number | null;
+  telegram_username: string | null;
+  telegram_sent_at: string | null;
+  phone: string | null;
 };
 
 type Payment = {
