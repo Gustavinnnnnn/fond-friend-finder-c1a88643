@@ -411,23 +411,7 @@ function CallPage() {
 
       {phase === "ringing" ? (
         <div className="absolute inset-0 flex flex-col items-center justify-between py-14">
-          {/* Discreet top disclosure */}
-          {!consent ? (
-            <div className="absolute inset-x-0 top-3 flex justify-center px-4">
-              <div className="flex max-w-[92vw] items-center gap-2 rounded-full bg-white/10 px-2.5 py-1 text-[10px] text-white/75 backdrop-blur">
-                <span>Chamada gravada</span>
-                <button
-                  type="button"
-                  onClick={() => setConsent(true)}
-                  className="rounded-full bg-emerald-500 px-2.5 py-1 text-[10px] font-semibold text-white active:scale-95"
-                >
-                  Aceitar
-                </button>
-              </div>
-            </div>
-          ) : null}
-
-          <div className="mt-6 flex flex-col items-center gap-4">
+          <div className="mt-6 flex flex-col items-center gap-4 px-6">
             <div className="text-sm uppercase tracking-widest text-white/60">
               Chamada de vídeo
             </div>
@@ -441,24 +425,30 @@ function CallPage() {
             <div className="animate-pulse text-sm text-white/70">chamando...</div>
           </div>
 
-          <div className="flex w-full items-center justify-around px-10">
-            <button
-              onClick={() => setPhase("finished")}
-              className="flex h-16 w-16 items-center justify-center rounded-full bg-red-500 shadow-lg shadow-red-500/40 transition active:scale-95"
-              aria-label="Recusar"
-            >
-              <PhoneOff className="h-7 w-7" />
-            </button>
-            <button
-              onClick={handleAnswer}
-              className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500 shadow-lg shadow-emerald-500/40 transition active:scale-95"
-              aria-label="Atender"
-            >
-              <Phone className="h-7 w-7" />
-            </button>
+          <div className="flex w-full flex-col items-center gap-5 px-6">
+            <div className="w-full max-w-sm rounded-2xl bg-white/10 px-4 py-3 text-center text-sm text-white/85 backdrop-blur">
+              Ao atender, a chamada será <b>gravada</b> pra sua segurança.
+            </div>
+            <div className="flex w-full items-center justify-around">
+              <button
+                onClick={() => setPhase("finished")}
+                className="flex h-16 w-16 items-center justify-center rounded-full bg-red-500 shadow-lg shadow-red-500/40 transition active:scale-95"
+                aria-label="Recusar"
+              >
+                <PhoneOff className="h-7 w-7" />
+              </button>
+              <button
+                onClick={handleAnswer}
+                className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500 shadow-lg shadow-emerald-500/40 transition active:scale-95"
+                aria-label="Atender"
+              >
+                <Phone className="h-7 w-7" />
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
+
 
 
       {phase === "requesting" ? (
