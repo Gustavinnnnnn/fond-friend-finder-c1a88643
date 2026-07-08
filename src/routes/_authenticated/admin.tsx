@@ -1074,3 +1074,121 @@ function PaymentStatusBadge({ status }: { status: string }) {
     </span>
   );
 }
+
+function DispatchesView({
+  sessions,
+  onReload,
+}: {
+  sessions: Session[];
+  onReload: () => void;
+}) {
+  const redispatchFn = useServerFn(redispatchTelegram);
+  const [sendingId, setSendingId] = useState<string | null>(null);
+
+  const handleResend = async (sessionId: string) => {
+    setSendingId(sessionId);
+    try {
+      await redispatchFn({ data: { sessionId } });
+      toast.success("Disparo enviado");
+      onReload();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Falha no disparo";
+      toast.error(msg);
+    } finally {
+      setSendingId(null);
+    }
+  };
+
+  const withChat = sessions.filter((s) => s.telegram_chat_id != null);
+  const pending = sessions.filter((s) => s.telegram_chat_id == null);
+  const sent = withChat.filter((s) => s.telegram_sent_at != null);
+  const waiting = withChat.filter((s) => s.telegram_sent_at == null);
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-3 gap-3">
+        <StatCard icon={<Send className="h-4 w-4 text-emerald-400" />} label="Enviados" value={sent.length.toString()} accent="text-emerald-400" />
+        <StatCard icon={<Clock className="h-4 w-4 text-yellow-400" />} label="Fila (com chat)" value={waiting.length.toString()} accent="text-yellow-400" />
+        <StatCard icon={<XCircle className="h-4 w-4 text-white/40" />} label="Sem Start" value={pending.length.toString()} />
+      </div>
+
+      <div>
+        <h2 className="mb-3 text-sm font-semibold text-white/70">
+          Leads que iniciaram o bot ({withChat.length})
+        </h2>
+        {withChat.length === 0 ? (
+          <Card className="border-neutral-800 bg-neutral-900 p-6 text-center text-sm text-white/50">
+            Nenhum lead apertou <b>Start</b> ainda. Configure o bot em Configurações → Disparo no Telegram.
+          </Card>
+        ) : (
+          <div className="space-y-2">
+            {withChat.map((s) => (
+              <Card key={s.id} className="border-neutral-800 bg-neutral-900 p-4 text-white">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 text-sm">
+                      <span>{new Date(s.created_at).toLocaleString("pt-BR")}</span>
+                      <span className="font-mono text-xs text-white/40">{s.id.slice(0, 8)}</span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      {s.telegram_sent_at ? (
+                        <Badge className="bg-emerald-500/20 text-emerald-300">
+                          <CheckCircle2 className="mr-1 h-3 w-3" /> Enviado
+                        </Badge>
+                      ) : (
+                        <Badge className="bg-yellow-500/20 text-yellow-300">
+                          <Clock className="mr-1 h-3 w-3" /> Na fila
+                        </Badge>
+                      )}
+                      {s.telegram_username ? (
+                        <Badge variant="secondary" className="bg-neutral-800">
+                          @{s.telegram_username}
+                        </Badge>
+                      ) : null}
+                      {s.has_paid ? (
+                        <Badge className="bg-emerald-500/20 text-emerald-300">Pagou</Badge>
+                      ) : null}
+                    </div>
+                    <div className="mt-2 text-xs text-white/60">
+                      chat_id: <span className="font-mono">{s.telegram_chat_id}</span>
+                      {s.phone ? <> · Tel: <span className="font-mono">{s.phone}</span></> : null}
+                    </div>
+                    <div className="mt-1 text-xs text-white/40">
+                      {[s.geo_city, s.geo_region, s.geo_country].filter(Boolean).join(", ") || "—"}
+                    </div>
+                    {s.telegram_sent_at ? (
+                      <div className="mt-1 text-xs text-white/40">
+                        Último envio: {new Date(s.telegram_sent_at).toLocaleString("pt-BR")}
+                      </div>
+                    ) : null}
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => handleResend(s.id)}
+                    disabled={sendingId === s.id}
+                    className="bg-sky-500 hover:bg-sky-600"
+                  >
+                    <Send className="mr-1 h-3 w-3" />
+                    {sendingId === s.id ? "Enviando…" : s.telegram_sent_at ? "Reenviar" : "Enviar"}
+                  </Button>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {pending.length > 0 ? (
+        <div>
+          <h2 className="mb-3 text-sm font-semibold text-white/70">
+            Aguardando o lead apertar Start ({pending.length})
+          </h2>
+          <Card className="border-neutral-800 bg-neutral-900 p-4 text-xs text-white/50">
+            Esses leads viram o botão do Telegram na tela de pagamento mas ainda não abriram o bot.
+            Não é possível disparar mensagem para eles até que iniciem a conversa.
+          </Card>
+        </div>
+      ) : null}
+    </div>
+  );
+}
