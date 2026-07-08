@@ -1,0 +1,218 @@
+import { createServerFn } from "@tanstack/react-start";
+import { getRequestHeader } from "@tanstack/react-start/server";
+import { z } from "zod";
+
+// ---------- helpers ----------
+async function getAdmin() {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  return supabaseAdmin;
+}
+
+function getPriceCents(settings: { price_cents: number | null }) {
+  return settings.price_cents ?? 3000;
+}
+
+// ---------- Start call session ----------
+export const startCallSession = createServerFn({ method: "POST" }).handler(
+  async () => {
+    const admin = await getAdmin();
+    const userAgent = getRequestHeader("user-agent") ?? null;
+
+    const { data, error } = await admin
+      .from("call_sessions")
+      .insert({ status: "started", user_agent: userAgent })
+      .select("id")
+      .single();
+
+    if (error) throw new Error(error.message);
+    return { sessionId: data.id as string };
+  },
+);
+
+// ---------- Mark free call ended ----------
+export const endFreeCall = createServerFn({ method: "POST" })
+  .inputValidator((data: { sessionId: string }) =>
+    z.object({ sessionId: z.string().uuid() }).parse(data),
+  )
+  .handler(async ({ data }) => {
+    const admin = await getAdmin();
+    const { error } = await admin
+      .from("call_sessions")
+      .update({ status: "free_ended", free_ended_at: new Date().toISOString() })
+      .eq("id", data.sessionId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+// ---------- Mark call completed ----------
+export const completeCall = createServerFn({ method: "POST" })
+  .inputValidator((data: { sessionId: string }) =>
+    z.object({ sessionId: z.string().uuid() }).parse(data),
+  )
+  .handler(async ({ data }) => {
+    const admin = await getAdmin();
+    const { error } = await admin
+      .from("call_sessions")
+      .update({ status: "completed", completed_at: new Date().toISOString() })
+      .eq("id", data.sessionId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+// ---------- Create Pix Payment ----------
+export const createPixPayment = createServerFn({ method: "POST" })
+  .inputValidator((data: { sessionId: string }) =>
+    z.object({ sessionId: z.string().uuid() }).parse(data),
+  )
+  .handler(async ({ data }) => {
+    const admin = await getAdmin();
+
+    // Read price from settings
+    const { data: settings, error: sErr } = await admin
+      .from("settings")
+      .select("price_cents")
+      .eq("id", 1)
+      .single();
+    if (sErr) throw new Error(sErr.message);
+    const amountCents = getPriceCents(settings);
+    const amountReais = amountCents / 100;
+
+    const token = process.env.MERCADO_PAGO_ACCESS_TOKEN;
+
+    // If Mercado Pago is not configured, return a placeholder record
+    if (!token) {
+      const { data: payment, error: pErr } = await admin
+        .from("payments")
+        .insert({
+          session_id: data.sessionId,
+          amount_cents: amountCents,
+          status: "not_configured",
+        })
+        .select("id")
+        .single();
+      if (pErr) throw new Error(pErr.message);
+      return {
+        configured: false as const,
+        paymentId: payment.id as string,
+        amountCents,
+      };
+    }
+
+    // Call Mercado Pago Pix API
+    const idempotencyKey = crypto.randomUUID();
+    const res = await fetch("https://api.mercadopago.com/v1/payments", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "X-Idempotency-Key": idempotencyKey,
+      },
+      body: JSON.stringify({
+        transaction_amount: Number(amountReais.toFixed(2)),
+        description: "Continuar chamada de vídeo",
+        payment_method_id: "pix",
+        payer: {
+          email: `lead-${data.sessionId.slice(0, 8)}@call.app`,
+          first_name: "Lead",
+          last_name: "Call",
+        },
+      }),
+    });
+
+    if (!res.ok) {
+      const errBody = await res.text();
+      console.error("Mercado Pago create error", res.status, errBody);
+      throw new Error(`Falha ao gerar Pix (${res.status})`);
+    }
+
+    const mp = (await res.json()) as {
+      id: number;
+      status: string;
+      point_of_interaction?: {
+        transaction_data?: {
+          qr_code?: string;
+          qr_code_base64?: string;
+          ticket_url?: string;
+        };
+      };
+    };
+    const tx = mp.point_of_interaction?.transaction_data ?? {};
+
+    const { data: payment, error: pErr } = await admin
+      .from("payments")
+      .insert({
+        session_id: data.sessionId,
+        provider: "mercadopago",
+        provider_payment_id: String(mp.id),
+        amount_cents: amountCents,
+        status: mp.status ?? "pending",
+        qr_code: tx.qr_code ?? null,
+        qr_code_base64: tx.qr_code_base64 ?? null,
+        ticket_url: tx.ticket_url ?? null,
+      })
+      .select("id")
+      .single();
+    if (pErr) throw new Error(pErr.message);
+
+    return {
+      configured: true as const,
+      paymentId: payment.id as string,
+      amountCents,
+      qrCode: tx.qr_code ?? "",
+      qrCodeBase64: tx.qr_code_base64 ?? "",
+      ticketUrl: tx.ticket_url ?? "",
+    };
+  });
+
+// ---------- Check payment status ----------
+export const checkPayment = createServerFn({ method: "POST" })
+  .inputValidator((data: { paymentId: string }) =>
+    z.object({ paymentId: z.string().uuid() }).parse(data),
+  )
+  .handler(async ({ data }) => {
+    const admin = await getAdmin();
+    const { data: payment, error } = await admin
+      .from("payments")
+      .select("id, provider_payment_id, status, session_id")
+      .eq("id", data.paymentId)
+      .single();
+    if (error) throw new Error(error.message);
+
+    // Already approved locally
+    if (payment.status === "approved") {
+      return { status: "approved" as const };
+    }
+
+    const token = process.env.MERCADO_PAGO_ACCESS_TOKEN;
+    if (!token || !payment.provider_payment_id) {
+      return { status: payment.status };
+    }
+
+    // Ask MP for current status
+    const res = await fetch(
+      `https://api.mercadopago.com/v1/payments/${payment.provider_payment_id}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!res.ok) {
+      const err = await res.text();
+      console.error("MP get error", res.status, err);
+      return { status: payment.status };
+    }
+    const mp = (await res.json()) as { status: string };
+
+    if (mp.status !== payment.status) {
+      await admin
+        .from("payments")
+        .update({ status: mp.status })
+        .eq("id", payment.id);
+
+      if (mp.status === "approved" && payment.session_id) {
+        await admin
+          .from("call_sessions")
+          .update({ status: "paid", paid_at: new Date().toISOString() })
+          .eq("id", payment.session_id);
+      }
+    }
+
+    return { status: mp.status };
+  });
