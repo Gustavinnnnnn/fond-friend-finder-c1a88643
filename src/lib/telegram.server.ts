@@ -60,6 +60,7 @@ type SessionRow = {
 type SettingsRow = {
   model_name: string;
   telegram_purchase_url: string | null;
+  dispatch_button_text: string;
   dispatch_copy_hangup: string;
   dispatch_copy_no_payment: string;
   dispatch_copy_post_payment: string;
@@ -108,7 +109,7 @@ export async function dispatchToLead(
   const { data: settings, error: setErr } = await supabaseAdmin
     .from("settings")
     .select(
-      "model_name, telegram_purchase_url, dispatch_copy_hangup, dispatch_copy_no_payment, dispatch_copy_post_payment, start_photo_url, start_video_url, start_message, start_button_text, mini_app_url",
+      "model_name, telegram_purchase_url, dispatch_button_text, dispatch_copy_hangup, dispatch_copy_no_payment, dispatch_copy_post_payment, start_photo_url, start_video_url, start_message, start_button_text, mini_app_url",
     )
     .eq("id", 1)
     .single<SettingsRow>();
@@ -163,19 +164,15 @@ export async function dispatchToLead(
           supports_streaming: true,
         });
       } catch (err) {
-        console.warn("sendVideo failed, falling back to document", err);
-        try {
-          await tgCall("sendDocument", { chat_id: chatId, document: url });
-        } catch (e2) {
-          console.error("sendDocument fallback failed", e2);
-        }
+        console.warn("sendVideo failed; document fallback disabled by product requirement", err);
       }
     }
   }
 
   // 3. Main copy with purchase button
+  const buttonText = settings.dispatch_button_text?.trim() || "💳 Liberar meu acesso agora";
   const replyMarkup = purchaseUrl
-    ? { inline_keyboard: [[{ text: "💳 Continuar minha compra", url: purchaseUrl }]] }
+    ? { inline_keyboard: [[{ text: buttonText, url: purchaseUrl }]] }
     : undefined;
 
   await tgCall("sendMessage", {
