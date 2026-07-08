@@ -313,7 +313,7 @@ export const checkPayment = createServerFn({ method: "POST" })
       if (mp.status === "approved" && payment.session_id) {
         await admin
           .from("call_sessions")
-          .update({ status: "paid", paid_at: new Date().toISOString() })
+          .update({ status: "paid", paid_at: new Date().toISOString(), has_paid: true })
           .eq("id", payment.session_id);
       }
     }
