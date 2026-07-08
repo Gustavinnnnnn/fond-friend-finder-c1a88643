@@ -65,6 +65,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { property: "og:description", content: "Sua chamada está começando..." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
+      { name: "twitter:title", content: "Chamada de vídeo" },
+      { name: "twitter:description", content: "Sua chamada está começando..." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/0b08ab28-0ef2-4d71-8530-806536c03833/id-preview-7986773d--02757c43-9d59-4dc3-86e6-03d5e9b1fefc.lovable.app-1783501915814.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/0b08ab28-0ef2-4d71-8530-806536c03833/id-preview-7986773d--02757c43-9d59-4dc3-86e6-03d5e9b1fefc.lovable.app-1783501915814.png" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
