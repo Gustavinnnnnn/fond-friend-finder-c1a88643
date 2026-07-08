@@ -207,9 +207,10 @@ function CallPage() {
     if (elapsed >= settings.free_duration_seconds) {
       freeEndedRef.current = true;
       modelVideoRef.current?.pause();
-      streamRef.current?.getTracks().forEach((t) => t.stop());
       setPhase("offer");
-      stopAndUploadRecording().catch(console.error);
+      stopAndUploadRecording()
+        .then(() => streamRef.current?.getTracks().forEach((t) => t.stop()))
+        .catch(console.error);
       endFreeFn({ data: { sessionId } }).catch(console.error);
     }
   }, [elapsed, endFreeFn, phase, sessionId, settings, stopAndUploadRecording]);
