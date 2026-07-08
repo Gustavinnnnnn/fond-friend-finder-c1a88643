@@ -201,6 +201,9 @@ function AdminPage() {
         offer_title: data.offer_title,
         offer_subtitle: data.offer_subtitle,
         contact_url: data.contact_url,
+        telegram_bot_username: data.telegram_bot_username,
+        telegram_copy_template: data.telegram_copy_template,
+        telegram_purchase_url: data.telegram_purchase_url,
       });
       setPhotoPreviewUrl(data.model_photo_preview_url);
       setVideoPreviewUrl(data.video_preview_url);
@@ -232,6 +235,9 @@ function AdminPage() {
         offer_title: settings.offer_title,
         offer_subtitle: settings.offer_subtitle,
         contact_url: settings.contact_url,
+        telegram_bot_username: settings.telegram_bot_username,
+        telegram_copy_template: settings.telegram_copy_template,
+        telegram_purchase_url: settings.telegram_purchase_url,
         },
       });
       await loadSettings();
