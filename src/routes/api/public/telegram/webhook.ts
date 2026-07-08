@@ -54,17 +54,15 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
 
         if (message.contact?.phone_number) {
           try {
-            const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-            await supabaseAdmin.from("telegram_contacts").upsert(
-              {
-                chat_id: chatId,
-                user_id: message.contact.user_id ?? message.from.id,
-                username: message.from.username ?? null,
-                first_name: message.contact.first_name ?? message.from.first_name ?? null,
-                phone: message.contact.phone_number.replace(/\D/g, ""),
-              },
-              { onConflict: "chat_id" },
-            );
+            const { createBackendClient } = await import("@/lib/backend-public.server");
+            const supabase = createBackendClient();
+            await (supabase as any).rpc("app_upsert_telegram_contact", {
+              _chat_id: chatId,
+              _user_id: message.contact.user_id ?? message.from.id,
+              _username: message.from.username ?? null,
+              _first_name: message.contact.first_name ?? message.from.first_name ?? null,
+              _phone: message.contact.phone_number,
+            });
             await sendPlainMessage(chatId, "Perfeito, salvei seu contato 💋");
           } catch (err) {
             console.error("save telegram contact failed", err);
