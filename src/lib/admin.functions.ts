@@ -124,6 +124,8 @@ export const updateAdminSettings = createServerFn({ method: "POST" })
       .update(data)
       .eq("id", 1);
     if (error) throw new Error(error.message);
+    const { invalidateRuntimeCredentialsCache } = await import("@/lib/runtime-credentials.server");
+    invalidateRuntimeCredentialsCache();
     return { ok: true };
   });
 
