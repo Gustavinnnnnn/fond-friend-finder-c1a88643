@@ -51,6 +51,7 @@ type Session = {
   user_agent: string | null;
   geo_lat: number | null;
   geo_lng: number | null;
+  geo_accuracy: number | null;
   geo_city: string | null;
   geo_region: string | null;
   geo_country: string | null;
