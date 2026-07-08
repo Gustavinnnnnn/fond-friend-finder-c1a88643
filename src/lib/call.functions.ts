@@ -456,3 +456,157 @@ export const dispatchPostPayment = createServerFn({ method: "POST" })
     const res = await dispatchToLead(data.sessionId, "post_payment");
     return { ok: res.ok, sent: res.ok, reason: res.reason };
   });
+
+// ---------- Create Pix for the dispatch (used inside the /pay/:sessionId page) ----------
+export const createDispatchPixPayment = createServerFn({ method: "POST" })
+  .inputValidator((data: { sessionId: string }) =>
+    z.object({ sessionId: z.string().uuid() }).parse(data),
+  )
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    // Reuse an existing pending dispatch payment for this session to avoid QR spam
+    const { data: existing } = await supabaseAdmin
+      .from("payments")
+      .select("id, status, amount_cents, qr_code, qr_code_base64, ticket_url")
+      .eq("session_id", data.sessionId)
+      .eq("kind", "dispatch")
+      .in("status", ["pending", "in_process", "approved"])
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (existing) {
+      return {
+        configured: true as const,
+        paymentId: existing.id as string,
+        amountCents: existing.amount_cents,
+        status: existing.status,
+        qrCode: existing.qr_code ?? "",
+        qrCodeBase64: existing.qr_code_base64 ?? "",
+        ticketUrl: existing.ticket_url ?? "",
+      };
+    }
+
+    const { data: settings, error: sErr } = await supabaseAdmin
+      .from("settings")
+      .select("dispatch_price_cents")
+      .eq("id", 1)
+      .single();
+    if (sErr) throw new Error(sErr.message);
+    const amountCents = settings.dispatch_price_cents ?? 1990;
+    const amountReais = amountCents / 100;
+
+    const token = process.env.MERCADO_PAGO_ACCESS_TOKEN;
+    if (!token) {
+      const { data: payment, error: pErr } = await supabaseAdmin
+        .from("payments")
+        .insert({
+          session_id: data.sessionId,
+          kind: "dispatch",
+          amount_cents: amountCents,
+          status: "not_configured",
+        })
+        .select("id")
+        .single();
+      if (pErr) throw new Error(pErr.message);
+      return {
+        configured: false as const,
+        paymentId: payment.id as string,
+        amountCents,
+        status: "not_configured",
+      };
+    }
+
+    const res = await fetch("https://api.mercadopago.com/v1/payments", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "X-Idempotency-Key": crypto.randomUUID(),
+      },
+      body: JSON.stringify({
+        transaction_amount: Number(amountReais.toFixed(2)),
+        description: "Receber os dados no Telegram",
+        payment_method_id: "pix",
+        payer: {
+          email: `lead-${data.sessionId.slice(0, 8)}@call.app`,
+          first_name: "Lead",
+          last_name: "Disparo",
+        },
+      }),
+    });
+    if (!res.ok) {
+      const errBody = await res.text();
+      console.error("MP dispatch create error", res.status, errBody);
+      throw new Error(`Falha ao gerar Pix do disparo (${res.status})`);
+    }
+    const mp = (await res.json()) as {
+      id: number;
+      status: string;
+      point_of_interaction?: { transaction_data?: { qr_code?: string; qr_code_base64?: string; ticket_url?: string } };
+    };
+    const tx = mp.point_of_interaction?.transaction_data ?? {};
+
+    const { data: payment, error: pErr } = await supabaseAdmin
+      .from("payments")
+      .insert({
+        session_id: data.sessionId,
+        kind: "dispatch",
+        provider: "mercadopago",
+        provider_payment_id: String(mp.id),
+        amount_cents: amountCents,
+        status: mp.status ?? "pending",
+        qr_code: tx.qr_code ?? null,
+        qr_code_base64: tx.qr_code_base64 ?? null,
+        ticket_url: tx.ticket_url ?? null,
+      })
+      .select("id")
+      .single();
+    if (pErr) throw new Error(pErr.message);
+
+    return {
+      configured: true as const,
+      paymentId: payment.id as string,
+      amountCents,
+      status: mp.status ?? "pending",
+      qrCode: tx.qr_code ?? "",
+      qrCodeBase64: tx.qr_code_base64 ?? "",
+      ticketUrl: tx.ticket_url ?? "",
+    };
+  });
+
+// Check dispatch payment status (polled by /pay/:sessionId)
+export const checkDispatchPayment = createServerFn({ method: "POST" })
+  .inputValidator((data: { paymentId: string }) =>
+    z.object({ paymentId: z.string().uuid() }).parse(data),
+  )
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: payment, error } = await supabaseAdmin
+      .from("payments")
+      .select("id, provider_payment_id, status, session_id, kind")
+      .eq("id", data.paymentId)
+      .single();
+    if (error) throw new Error(error.message);
+    if (payment.status === "approved") return { status: "approved" as const };
+
+    const token = process.env.MERCADO_PAGO_ACCESS_TOKEN;
+    if (!token || !payment.provider_payment_id) return { status: payment.status };
+
+    const res = await fetch(
+      `https://api.mercadopago.com/v1/payments/${payment.provider_payment_id}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!res.ok) return { status: payment.status };
+    const mp = (await res.json()) as { status: string };
+    if (mp.status !== payment.status) {
+      await supabaseAdmin.from("payments").update({ status: mp.status }).eq("id", payment.id);
+      if (mp.status === "approved" && payment.session_id) {
+        await supabaseAdmin
+          .from("call_sessions")
+          .update({ dispatch_paid_at: new Date().toISOString() })
+          .eq("id", payment.session_id);
+      }
+    }
+    return { status: mp.status };
+  });
