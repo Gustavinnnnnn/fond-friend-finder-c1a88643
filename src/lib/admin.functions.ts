@@ -34,7 +34,7 @@ export const getDashboard = createServerFn({ method: "POST" })
     const { data: sessions, error: sErr } = await supabaseAdmin
       .from("call_sessions")
       .select(
-        "id, status, created_at, free_ended_at, paid_at, completed_at, ip, user_agent, geo_lat, geo_lng, geo_city, geo_region, geo_country, consent_recording, recording_path, has_paid",
+        "id, status, created_at, free_ended_at, paid_at, completed_at, ip, user_agent, geo_lat, geo_lng, geo_accuracy, geo_city, geo_region, geo_country, consent_recording, recording_path, has_paid",
       )
       .order("created_at", { ascending: false })
       .limit(200);
