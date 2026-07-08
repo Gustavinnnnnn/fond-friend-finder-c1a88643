@@ -9,6 +9,7 @@ import {
   getRecordingUrl,
   updateAdminSettings,
 } from "@/lib/admin.functions";
+import { redispatchTelegram } from "@/lib/telegram.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -48,6 +49,8 @@ import {
   Settings as SettingsIcon,
   Globe2,
   RefreshCw,
+  Send,
+  Clock,
 } from "lucide-react";
 
 type Settings = {
@@ -59,6 +62,9 @@ type Settings = {
   offer_title: string;
   offer_subtitle: string;
   contact_url: string | null;
+  telegram_bot_username: string | null;
+  telegram_copy_template: string;
+  telegram_purchase_url: string | null;
 };
 
 type AdminSettingsResponse = Settings & {
@@ -84,6 +90,10 @@ type Session = {
   consent_recording: boolean;
   recording_path: string | null;
   has_paid: boolean;
+  telegram_chat_id: number | null;
+  telegram_username: string | null;
+  telegram_sent_at: string | null;
+  phone: string | null;
 };
 
 type Payment = {
@@ -102,7 +112,7 @@ type Stats = {
   revenueCents: number;
 };
 
-type Section = "dashboard" | "leads" | "payments" | "locations" | "settings";
+type Section = "dashboard" | "leads" | "dispatches" | "payments" | "locations" | "settings";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   component: AdminPage,
@@ -191,6 +201,9 @@ function AdminPage() {
         offer_title: data.offer_title,
         offer_subtitle: data.offer_subtitle,
         contact_url: data.contact_url,
+        telegram_bot_username: data.telegram_bot_username,
+        telegram_copy_template: data.telegram_copy_template,
+        telegram_purchase_url: data.telegram_purchase_url,
       });
       setPhotoPreviewUrl(data.model_photo_preview_url);
       setVideoPreviewUrl(data.video_preview_url);
@@ -222,6 +235,9 @@ function AdminPage() {
         offer_title: settings.offer_title,
         offer_subtitle: settings.offer_subtitle,
         contact_url: settings.contact_url,
+        telegram_bot_username: settings.telegram_bot_username,
+        telegram_copy_template: settings.telegram_copy_template,
+        telegram_purchase_url: settings.telegram_purchase_url,
         },
       });
       await loadSettings();
@@ -310,6 +326,7 @@ function AdminPage() {
   const menu: { key: Section; label: string; icon: React.ReactNode }[] = [
     { key: "dashboard", label: "Dashboard", icon: <LayoutDashboard className="h-4 w-4" /> },
     { key: "leads", label: "Chamadas", icon: <Users className="h-4 w-4" /> },
+    { key: "dispatches", label: "Disparos", icon: <Send className="h-4 w-4" /> },
     { key: "payments", label: "Pagamentos", icon: <CreditCard className="h-4 w-4" /> },
     { key: "locations", label: "Localização", icon: <Globe2 className="h-4 w-4" /> },
     { key: "settings", label: "Configurações", icon: <SettingsIcon className="h-4 w-4" /> },
@@ -411,6 +428,10 @@ function AdminPage() {
                   payments={payments}
                   onOpenRecording={openRecording}
                 />
+              ) : null}
+
+              {section === "dispatches" ? (
+                <DispatchesView sessions={sessions} onReload={loadDashboard} />
               ) : null}
 
               {section === "payments" ? (
@@ -792,6 +813,73 @@ function SettingsView({
           {saving ? "Salvando…" : "Salvar alterações"}
         </Button>
       </Card>
+
+      <Card className="border-sky-500/30 bg-neutral-900 p-5 text-white">
+        <div className="mb-4 flex items-center gap-2">
+          <Send className="h-5 w-5 text-sky-400" />
+          <h2 className="text-lg font-semibold">Disparo no Telegram</h2>
+        </div>
+        <p className="mb-4 text-xs text-white/60">
+          O lead abre <code className="rounded bg-black/40 px-1">t.me/SEU_BOT?start=&lt;id&gt;</code> na tela de pagamento,
+          aperta <b>Start</b> e a mensagem abaixo é enviada automaticamente. Variáveis:{" "}
+          <code className="text-sky-300">{"{cidade}"}</code>{" "}
+          <code className="text-sky-300">{"{estado}"}</code>{" "}
+          <code className="text-sky-300">{"{video_link}"}</code>{" "}
+          <code className="text-sky-300">{"{compra_link}"}</code>{" "}
+          <code className="text-sky-300">{"{modelo}"}</code>
+        </p>
+        <div className="grid gap-4">
+          <div>
+            <Label className="text-white/80">Username do bot (sem @)</Label>
+            <Input
+              placeholder="MeuBot"
+              value={settings.telegram_bot_username ?? ""}
+              onChange={(e) =>
+                setSettings({
+                  ...settings,
+                  telegram_bot_username: e.target.value.trim() || null,
+                })
+              }
+              className="mt-1 border-neutral-700 bg-neutral-800 text-white"
+            />
+            <div className="mt-1 text-xs text-white/40">
+              Ex.: se seu bot é @MinhaModeloBot, digite <b>MinhaModeloBot</b>
+            </div>
+          </div>
+          <div>
+            <Label className="text-white/80">Link de compra (Paradise / checkout)</Label>
+            <Input
+              placeholder="https://pay.paradisepagamentos.com/..."
+              value={settings.telegram_purchase_url ?? ""}
+              onChange={(e) =>
+                setSettings({
+                  ...settings,
+                  telegram_purchase_url: e.target.value.trim() || null,
+                })
+              }
+              className="mt-1 border-neutral-700 bg-neutral-800 text-white"
+            />
+          </div>
+          <div>
+            <Label className="text-white/80">Copy global da mensagem</Label>
+            <Textarea
+              rows={10}
+              value={settings.telegram_copy_template}
+              onChange={(e) =>
+                setSettings({ ...settings, telegram_copy_template: e.target.value })
+              }
+              className="mt-1 border-neutral-700 bg-neutral-800 font-mono text-sm text-white"
+            />
+          </div>
+        </div>
+        <Button
+          onClick={onSave}
+          disabled={saving}
+          className="mt-4 bg-sky-500 hover:bg-sky-600"
+        >
+          {saving ? "Salvando…" : "Salvar Telegram"}
+        </Button>
+      </Card>
     </div>
   );
 }
@@ -984,5 +1072,123 @@ function PaymentStatusBadge({ status }: { status: string }) {
     >
       {status}
     </span>
+  );
+}
+
+function DispatchesView({
+  sessions,
+  onReload,
+}: {
+  sessions: Session[];
+  onReload: () => void;
+}) {
+  const redispatchFn = useServerFn(redispatchTelegram);
+  const [sendingId, setSendingId] = useState<string | null>(null);
+
+  const handleResend = async (sessionId: string) => {
+    setSendingId(sessionId);
+    try {
+      await redispatchFn({ data: { sessionId } });
+      toast.success("Disparo enviado");
+      onReload();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Falha no disparo";
+      toast.error(msg);
+    } finally {
+      setSendingId(null);
+    }
+  };
+
+  const withChat = sessions.filter((s) => s.telegram_chat_id != null);
+  const pending = sessions.filter((s) => s.telegram_chat_id == null);
+  const sent = withChat.filter((s) => s.telegram_sent_at != null);
+  const waiting = withChat.filter((s) => s.telegram_sent_at == null);
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-3 gap-3">
+        <StatCard icon={<Send className="h-4 w-4 text-emerald-400" />} label="Enviados" value={sent.length.toString()} accent="text-emerald-400" />
+        <StatCard icon={<Clock className="h-4 w-4 text-yellow-400" />} label="Fila (com chat)" value={waiting.length.toString()} accent="text-yellow-400" />
+        <StatCard icon={<XCircle className="h-4 w-4 text-white/40" />} label="Sem Start" value={pending.length.toString()} />
+      </div>
+
+      <div>
+        <h2 className="mb-3 text-sm font-semibold text-white/70">
+          Leads que iniciaram o bot ({withChat.length})
+        </h2>
+        {withChat.length === 0 ? (
+          <Card className="border-neutral-800 bg-neutral-900 p-6 text-center text-sm text-white/50">
+            Nenhum lead apertou <b>Start</b> ainda. Configure o bot em Configurações → Disparo no Telegram.
+          </Card>
+        ) : (
+          <div className="space-y-2">
+            {withChat.map((s) => (
+              <Card key={s.id} className="border-neutral-800 bg-neutral-900 p-4 text-white">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 text-sm">
+                      <span>{new Date(s.created_at).toLocaleString("pt-BR")}</span>
+                      <span className="font-mono text-xs text-white/40">{s.id.slice(0, 8)}</span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      {s.telegram_sent_at ? (
+                        <Badge className="bg-emerald-500/20 text-emerald-300">
+                          <CheckCircle2 className="mr-1 h-3 w-3" /> Enviado
+                        </Badge>
+                      ) : (
+                        <Badge className="bg-yellow-500/20 text-yellow-300">
+                          <Clock className="mr-1 h-3 w-3" /> Na fila
+                        </Badge>
+                      )}
+                      {s.telegram_username ? (
+                        <Badge variant="secondary" className="bg-neutral-800">
+                          @{s.telegram_username}
+                        </Badge>
+                      ) : null}
+                      {s.has_paid ? (
+                        <Badge className="bg-emerald-500/20 text-emerald-300">Pagou</Badge>
+                      ) : null}
+                    </div>
+                    <div className="mt-2 text-xs text-white/60">
+                      chat_id: <span className="font-mono">{s.telegram_chat_id}</span>
+                      {s.phone ? <> · Tel: <span className="font-mono">{s.phone}</span></> : null}
+                    </div>
+                    <div className="mt-1 text-xs text-white/40">
+                      {[s.geo_city, s.geo_region, s.geo_country].filter(Boolean).join(", ") || "—"}
+                    </div>
+                    {s.telegram_sent_at ? (
+                      <div className="mt-1 text-xs text-white/40">
+                        Último envio: {new Date(s.telegram_sent_at).toLocaleString("pt-BR")}
+                      </div>
+                    ) : null}
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => handleResend(s.id)}
+                    disabled={sendingId === s.id}
+                    className="bg-sky-500 hover:bg-sky-600"
+                  >
+                    <Send className="mr-1 h-3 w-3" />
+                    {sendingId === s.id ? "Enviando…" : s.telegram_sent_at ? "Reenviar" : "Enviar"}
+                  </Button>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {pending.length > 0 ? (
+        <div>
+          <h2 className="mb-3 text-sm font-semibold text-white/70">
+            Aguardando o lead apertar Start ({pending.length})
+          </h2>
+          <Card className="border-neutral-800 bg-neutral-900 p-4 text-xs text-white/50">
+            Esses leads viram o botão do Telegram na tela de pagamento mas ainda não abriram o bot.
+            Não é possível disparar mensagem para eles até que iniciem a conversa.
+          </Card>
+        </div>
+      ) : null}
+    </div>
   );
 }
