@@ -13,20 +13,16 @@ const settingsSchema = z.object({
   contact_url: z.string().nullable(),
 });
 
-async function assertAdmin(context: { supabase: any; userId: string }) {
-  const { data, error } = await context.supabase.rpc("has_role", {
-    _user_id: context.userId,
-    _role: "admin",
-  });
-  if (error) throw new Error(error.message);
-  if (!data) throw new Error("Forbidden");
-}
-
 // ---------- Dashboard stats ----------
 export const getDashboard = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await assertAdmin(context);
+    const { data: isAdmin, error: roleError } = await context.supabase.rpc("has_role", {
+      _user_id: context.userId,
+      _role: "admin",
+    });
+    if (roleError) throw new Error(roleError.message);
+    if (!isAdmin) throw new Error("Forbidden");
     const { supabaseAdmin } = await import(
       "@/integrations/supabase/client.server"
     );
@@ -67,7 +63,12 @@ export const getDashboard = createServerFn({ method: "POST" })
 export const getAdminSettings = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await assertAdmin(context);
+    const { data: isAdmin, error: roleError } = await context.supabase.rpc("has_role", {
+      _user_id: context.userId,
+      _role: "admin",
+    });
+    if (roleError) throw new Error(roleError.message);
+    if (!isAdmin) throw new Error("Forbidden");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data, error } = await supabaseAdmin
       .from("settings")
@@ -97,7 +98,12 @@ export const updateAdminSettings = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: unknown) => settingsSchema.parse(data))
   .handler(async ({ data, context }) => {
-    await assertAdmin(context);
+    const { data: isAdmin, error: roleError } = await context.supabase.rpc("has_role", {
+      _user_id: context.userId,
+      _role: "admin",
+    });
+    if (roleError) throw new Error(roleError.message);
+    if (!isAdmin) throw new Error("Forbidden");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin
       .from("settings")
@@ -113,7 +119,12 @@ export const getAdminMediaUploadUrl = createServerFn({ method: "POST" })
     z.object({ kind: z.enum(["video", "photo"]), ext: z.string().max(10) }).parse(data),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context);
+    const { data: isAdmin, error: roleError } = await context.supabase.rpc("has_role", {
+      _user_id: context.userId,
+      _role: "admin",
+    });
+    if (roleError) throw new Error(roleError.message);
+    if (!isAdmin) throw new Error("Forbidden");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const cleanExt = data.ext.replace(/[^a-z0-9]/gi, "") || (data.kind === "video" ? "mp4" : "jpg");
     const path = `${data.kind}/${Date.now()}-${crypto.randomUUID()}.${cleanExt}`;
@@ -131,7 +142,12 @@ export const getRecordingUrl = createServerFn({ method: "POST" })
     z.object({ path: z.string() }).parse(data),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context);
+    const { data: isAdmin, error: roleError } = await context.supabase.rpc("has_role", {
+      _user_id: context.userId,
+      _role: "admin",
+    });
+    if (roleError) throw new Error(roleError.message);
+    if (!isAdmin) throw new Error("Forbidden");
     const { supabaseAdmin } = await import(
       "@/integrations/supabase/client.server"
     );
