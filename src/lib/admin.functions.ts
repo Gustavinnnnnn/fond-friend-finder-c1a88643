@@ -62,7 +62,7 @@ export const getAdminSettings = createServerFn({ method: "POST" })
     const { data, error } = await supabaseAdmin
       .from("settings")
       .select(
-        "model_name, model_photo_url, video_url, free_duration_seconds, price_cents, dispatch_price_cents, offer_title, offer_subtitle, contact_url, telegram_bot_username, telegram_copy_template, telegram_purchase_url, start_photo_url, start_video_url, start_message, start_button_text, mini_app_url, dispatch_copy_hangup, dispatch_copy_no_payment, dispatch_copy_post_payment",
+        "model_name, model_photo_url, video_url, free_duration_seconds, price_cents, dispatch_price_cents, offer_title, offer_subtitle, contact_url, telegram_bot_username, telegram_copy_template, telegram_purchase_url, start_photo_url, start_video_url, start_message, start_button_text, mini_app_url, dispatch_button_text, dispatch_copy_hangup, dispatch_copy_no_payment, dispatch_copy_post_payment",
       )
       .eq("id", 1)
       .single();
@@ -108,6 +108,7 @@ export const updateAdminSettings = createServerFn({ method: "POST" })
         start_message: z.string().min(1).max(4000),
         start_button_text: z.string().min(1).max(64),
         mini_app_url: z.string().max(500).nullable(),
+        dispatch_button_text: z.string().min(1).max(64),
         dispatch_copy_hangup: z.string().min(1).max(4000),
         dispatch_copy_no_payment: z.string().min(1).max(4000),
         dispatch_copy_post_payment: z.string().min(1).max(4000),

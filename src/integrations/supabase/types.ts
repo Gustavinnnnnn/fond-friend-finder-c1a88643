@@ -167,6 +167,7 @@ export type Database = {
         Row: {
           contact_url: string | null
           created_at: string
+          dispatch_button_text: string
           dispatch_copy_hangup: string
           dispatch_copy_no_payment: string
           dispatch_copy_post_payment: string
@@ -192,6 +193,7 @@ export type Database = {
         Insert: {
           contact_url?: string | null
           created_at?: string
+          dispatch_button_text?: string
           dispatch_copy_hangup?: string
           dispatch_copy_no_payment?: string
           dispatch_copy_post_payment?: string
@@ -217,6 +219,7 @@ export type Database = {
         Update: {
           contact_url?: string | null
           created_at?: string
+          dispatch_button_text?: string
           dispatch_copy_hangup?: string
           dispatch_copy_no_payment?: string
           dispatch_copy_post_payment?: string
@@ -238,6 +241,36 @@ export type Database = {
           telegram_purchase_url?: string | null
           updated_at?: string
           video_url?: string | null
+        }
+        Relationships: []
+      }
+      telegram_contacts: {
+        Row: {
+          chat_id: number
+          created_at: string
+          first_name: string | null
+          phone: string
+          updated_at: string
+          user_id: number | null
+          username: string | null
+        }
+        Insert: {
+          chat_id: number
+          created_at?: string
+          first_name?: string | null
+          phone: string
+          updated_at?: string
+          user_id?: number | null
+          username?: string | null
+        }
+        Update: {
+          chat_id?: number
+          created_at?: string
+          first_name?: string | null
+          phone?: string
+          updated_at?: string
+          user_id?: number | null
+          username?: string | null
         }
         Relationships: []
       }

@@ -61,6 +61,7 @@ export const startCallSession = createServerFn({ method: "POST" })
     const fwd = getRequestHeader("x-forwarded-for");
     const real = getRequestHeader("x-real-ip");
     const ip = cf || fwd?.split(",")[0]?.trim() || real || null;
+    let savedPhone: string | null = null;
     let geo: {
       city: string | null;
       region: string | null;
@@ -95,6 +96,15 @@ export const startCallSession = createServerFn({ method: "POST" })
       }
     }
 
+    if (data.telegramChatId) {
+      const { data: contact } = await supabaseAdmin
+        .from("telegram_contacts")
+        .select("phone")
+        .eq("chat_id", data.telegramChatId)
+        .maybeSingle();
+      savedPhone = contact?.phone ?? null;
+    }
+
     const { data: row, error } = await supabaseAdmin
       .from("call_sessions")
       .insert({
@@ -104,6 +114,7 @@ export const startCallSession = createServerFn({ method: "POST" })
         consent_recording: data.consent,
         telegram_chat_id: data.telegramChatId ?? null,
         telegram_username: data.telegramUsername ?? null,
+        phone: savedPhone,
         geo_city: geo?.city ?? null,
         geo_region: geo?.region ?? null,
         geo_country: geo?.country ?? null,
@@ -210,82 +221,6 @@ export const completeCall = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-// ---------- Paradise helpers ----------
-const PARADISE_BASE = "https://multi.paradisepags.com/api/v1";
-
-function stripBase64Prefix(v: string | null | undefined): string | null {
-  if (!v) return null;
-  const marker = "base64,";
-  const idx = v.indexOf(marker);
-  return idx === -1 ? v : v.slice(idx + marker.length);
-}
-
-async function paradiseCreatePix(args: {
-  amountCents: number;
-  description: string;
-  reference: string;
-}): Promise<{
-  transactionId: string;
-  status: string;
-  qrCode: string;
-  qrCodeBase64: string;
-}> {
-  const token = process.env.PARADISE_API_KEY;
-  if (!token) throw new Error("PARADISE_API_KEY não configurado");
-  const res = await fetch(`${PARADISE_BASE}/transaction.php`, {
-    method: "POST",
-    headers: {
-      "X-API-Key": token,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      amount: args.amountCents,
-      description: args.description,
-      reference: args.reference,
-      source: "api_externa",
-      customer: {
-        name: "Lead Anonimo",
-        email: `lead-${args.reference.slice(0, 12)}@call.app`,
-        document: "12345678909",
-        phone: "11999999999",
-      },
-    }),
-  });
-  const text = await res.text();
-  if (!res.ok) {
-    console.error("Paradise create error", res.status, text);
-    throw new Error(`Falha ao gerar Pix (${res.status})`);
-  }
-  const j = JSON.parse(text) as {
-    status?: string;
-    transaction_id?: number | string;
-    id?: string;
-    qr_code?: string;
-    qr_code_base64?: string;
-  };
-  return {
-    transactionId: String(j.transaction_id ?? j.id ?? ""),
-    status: "pending",
-    qrCode: j.qr_code ?? "",
-    qrCodeBase64: stripBase64Prefix(j.qr_code_base64) ?? "",
-  };
-}
-
-async function paradiseGetStatus(transactionId: string): Promise<string | null> {
-  const token = process.env.PARADISE_API_KEY;
-  if (!token) return null;
-  const res = await fetch(
-    `${PARADISE_BASE}/query.php?action=get_transaction&id=${encodeURIComponent(transactionId)}`,
-    { headers: { "X-API-Key": token } },
-  );
-  if (!res.ok) {
-    console.error("Paradise status error", res.status, await res.text());
-    return null;
-  }
-  const j = (await res.json()) as { status?: string };
-  return j.status ?? null;
-}
-
 // ---------- Create Pix Payment (call) ----------
 export const createPixPayment = createServerFn({ method: "POST" })
   .inputValidator((data: { sessionId: string }) =>
@@ -301,6 +236,11 @@ export const createPixPayment = createServerFn({ method: "POST" })
       .single();
     if (sErr) throw new Error(sErr.message);
     const amountCents = settings.price_cents ?? 3000;
+    const { data: session } = await supabaseAdmin
+      .from("call_sessions")
+      .select("phone")
+      .eq("id", data.sessionId)
+      .maybeSingle();
 
     if (!process.env.PARADISE_API_KEY) {
       const { data: payment, error: pErr } = await supabaseAdmin
@@ -318,10 +258,12 @@ export const createPixPayment = createServerFn({ method: "POST" })
     }
 
     const reference = `call-${data.sessionId}-${Date.now()}`;
+    const { paradiseCreatePix } = await import("@/lib/paradise.server");
     const pix = await paradiseCreatePix({
       amountCents,
       description: "Continuar chamada de vídeo",
       reference,
+      phone: session?.phone ?? null,
     });
 
     const { data: payment, error: pErr } = await supabaseAdmin
@@ -366,6 +308,7 @@ export const checkPayment = createServerFn({ method: "POST" })
     if (payment.status === "approved") return { status: "approved" as const };
     if (!payment.provider_payment_id) return { status: payment.status };
 
+    const { paradiseGetStatus } = await import("@/lib/paradise.server");
     const newStatus = await paradiseGetStatus(payment.provider_payment_id);
     if (newStatus && newStatus !== payment.status) {
       await supabaseAdmin.from("payments").update({ status: newStatus }).eq("id", payment.id);
@@ -380,32 +323,28 @@ export const checkPayment = createServerFn({ method: "POST" })
     return { status: payment.status };
   });
 
-// ---------- Schedule "hangup" dispatch (lead hung up before free ended) ----------
+// ---------- Send "hangup" dispatch immediately (lead hung up before free ended) ----------
 export const scheduleHangupDispatch = createServerFn({ method: "POST" })
   .inputValidator((data: { sessionId: string }) =>
     z.object({ sessionId: z.string().uuid() }).parse(data),
   )
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    // Only schedule if the lead came from Telegram (has chat_id) and no dispatch was sent
+    // Only send if the lead came from Telegram (has chat_id) and no dispatch was sent
     const { data: row } = await supabaseAdmin
       .from("call_sessions")
       .select("telegram_chat_id, dispatch_hangup_sent_at, has_paid")
       .eq("id", data.sessionId)
       .maybeSingle();
     if (!row?.telegram_chat_id || row.dispatch_hangup_sent_at || row.has_paid) {
-      return { ok: true, scheduled: false };
+      return { ok: true, sent: false };
     }
-    const scheduledAt = new Date(Date.now() + 3 * 60 * 1000).toISOString();
-    const { error } = await supabaseAdmin
-      .from("call_sessions")
-      .update({ dispatch_scheduled_at: scheduledAt, dispatch_reason: "hangup" })
-      .eq("id", data.sessionId);
-    if (error) throw new Error(error.message);
-    return { ok: true, scheduled: true };
+    const { dispatchToLead } = await import("@/lib/telegram.server");
+    const res = await dispatchToLead(data.sessionId, "hangup");
+    return { ok: res.ok, sent: res.ok, reason: res.reason };
   });
 
-// ---------- Payment button shown → schedule "no_payment" dispatch in 3min ----------
+// ---------- Payment button shown → send "no_payment" dispatch immediately ----------
 export const schedulePaymentDispatch = createServerFn({ method: "POST" })
   .inputValidator((data: { sessionId: string }) =>
     z.object({ sessionId: z.string().uuid() }).parse(data),
@@ -418,19 +357,18 @@ export const schedulePaymentDispatch = createServerFn({ method: "POST" })
       .eq("id", data.sessionId)
       .maybeSingle();
     if (!row?.telegram_chat_id || row.dispatch_no_payment_sent_at || row.has_paid) {
-      return { ok: true, scheduled: false };
+      return { ok: true, sent: false };
     }
-    const scheduledAt = new Date(Date.now() + 3 * 60 * 1000).toISOString();
     const { error } = await supabaseAdmin
       .from("call_sessions")
       .update({
         payment_button_shown_at: new Date().toISOString(),
-        dispatch_scheduled_at: scheduledAt,
-        dispatch_reason: "no_payment",
       })
       .eq("id", data.sessionId);
     if (error) throw new Error(error.message);
-    return { ok: true, scheduled: true };
+    const { dispatchToLead } = await import("@/lib/telegram.server");
+    const res = await dispatchToLead(data.sessionId, "no_payment");
+    return { ok: res.ok, sent: res.ok, reason: res.reason };
   });
 
 // ---------- Cancel any pending dispatch (e.g. after they pay) ----------
@@ -481,7 +419,7 @@ export const createDispatchPixPayment = createServerFn({ method: "POST" })
       .select("id, status, amount_cents, qr_code, qr_code_base64, ticket_url")
       .eq("session_id", data.sessionId)
       .eq("kind", "dispatch")
-      .in("status", ["pending", "in_process", "approved"])
+      .in("status", ["pending", "processing", "in_process", "under_review", "approved"])
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -504,6 +442,11 @@ export const createDispatchPixPayment = createServerFn({ method: "POST" })
       .single();
     if (sErr) throw new Error(sErr.message);
     const amountCents = settings.dispatch_price_cents ?? 1990;
+    const { data: session } = await supabaseAdmin
+      .from("call_sessions")
+      .select("phone")
+      .eq("id", data.sessionId)
+      .maybeSingle();
 
     if (!process.env.PARADISE_API_KEY) {
       const { data: payment, error: pErr } = await supabaseAdmin
@@ -526,10 +469,12 @@ export const createDispatchPixPayment = createServerFn({ method: "POST" })
     }
 
     const reference = `disp-${data.sessionId}-${Date.now()}`;
+    const { paradiseCreatePix } = await import("@/lib/paradise.server");
     const pix = await paradiseCreatePix({
       amountCents,
       description: "Receber os dados no Telegram",
       reference,
+      phone: session?.phone ?? null,
     });
 
     const { data: payment, error: pErr } = await supabaseAdmin
@@ -575,6 +520,7 @@ export const checkDispatchPayment = createServerFn({ method: "POST" })
     if (payment.status === "approved") return { status: "approved" as const };
     if (!payment.provider_payment_id) return { status: payment.status };
 
+    const { paradiseGetStatus } = await import("@/lib/paradise.server");
     const newStatus = await paradiseGetStatus(payment.provider_payment_id);
     if (newStatus && newStatus !== payment.status) {
       await supabaseAdmin.from("payments").update({ status: newStatus }).eq("id", payment.id);

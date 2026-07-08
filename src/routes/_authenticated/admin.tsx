@@ -70,6 +70,7 @@ type Settings = {
   start_message: string;
   start_button_text: string;
   mini_app_url: string | null;
+  dispatch_button_text: string;
   dispatch_copy_hangup: string;
   dispatch_copy_no_payment: string;
   dispatch_copy_post_payment: string;
@@ -226,6 +227,7 @@ function AdminPage() {
         start_message: data.start_message,
         start_button_text: data.start_button_text,
         mini_app_url: data.mini_app_url,
+        dispatch_button_text: data.dispatch_button_text,
         dispatch_copy_hangup: data.dispatch_copy_hangup,
         dispatch_copy_no_payment: data.dispatch_copy_no_payment,
         dispatch_copy_post_payment: data.dispatch_copy_post_payment,
@@ -270,6 +272,7 @@ function AdminPage() {
           start_message: settings.start_message,
           start_button_text: settings.start_button_text,
           mini_app_url: settings.mini_app_url,
+          dispatch_button_text: settings.dispatch_button_text,
           dispatch_copy_hangup: settings.dispatch_copy_hangup,
           dispatch_copy_no_payment: settings.dispatch_copy_no_payment,
           dispatch_copy_post_payment: settings.dispatch_copy_post_payment,
@@ -868,7 +871,7 @@ function SettingsView({
               className="mt-1 border-neutral-700 bg-neutral-800 text-white"
             />
             <p className="mt-1 text-xs text-white/45">
-              Cobrado quando o lead clica em "Continuar minha compra" no Telegram.
+              Cobrado quando o lead clica no botão do disparo no Telegram.
             </p>
           </div>
           <div className="sm:col-span-2">
@@ -1008,6 +1011,14 @@ function SettingsView({
         </p>
         <div className="grid gap-4">
           <div>
+            <Label className="text-white/80">Texto do botão do disparo</Label>
+            <Input
+              value={settings.dispatch_button_text}
+              onChange={(e) => setSettings({ ...settings, dispatch_button_text: e.target.value })}
+              className="mt-1 border-neutral-700 bg-neutral-800 text-white"
+            />
+          </div>
+          <div>
             <Label className="text-white/80">
               1️⃣ Quando o lead <b>desliga antes</b> do fim da chamada grátis
             </Label>
@@ -1017,11 +1028,11 @@ function SettingsView({
               onChange={(e) => setSettings({ ...settings, dispatch_copy_hangup: e.target.value })}
               className="mt-1 border-neutral-700 bg-neutral-800 font-mono text-sm text-white"
             />
-            <div className="mt-1 text-xs text-white/40">Disparado 3 min depois que o lead desliga.</div>
+            <div className="mt-1 text-xs text-white/40">Disparado na hora que o lead desliga.</div>
           </div>
           <div>
             <Label className="text-white/80">
-              2️⃣ Quando o lead <b>vê o botão de pagar e não paga</b> em 3 min
+              2️⃣ Quando o lead <b>vê o botão de pagar</b>
             </Label>
             <Textarea
               rows={5}
@@ -1029,7 +1040,7 @@ function SettingsView({
               onChange={(e) => setSettings({ ...settings, dispatch_copy_no_payment: e.target.value })}
               className="mt-1 border-neutral-700 bg-neutral-800 font-mono text-sm text-white"
             />
-            <div className="mt-1 text-xs text-white/40">Disparado 3 min depois que a oferta aparece na tela.</div>
+            <div className="mt-1 text-xs text-white/40">Disparado na hora que a oferta aparece na tela.</div>
           </div>
           <div>
             <Label className="text-white/80">

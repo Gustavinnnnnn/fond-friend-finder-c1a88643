@@ -81,10 +81,12 @@ function formatBRL(cents: number) {
 function pickRecorderMime() {
   if (typeof MediaRecorder === "undefined") return "";
   const candidates = [
+    "video/mp4;codecs=h264,aac",
+    "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+    "video/mp4",
     "video/webm;codecs=vp9,opus",
     "video/webm;codecs=vp8,opus",
     "video/webm",
-    "video/mp4",
   ];
   for (const m of candidates) {
     if (MediaRecorder.isTypeSupported(m)) return m;
@@ -237,7 +239,7 @@ function CallPage() {
     await uploadRecording();
   }, [uploadRecording]);
 
-  // Free-call timeout: save the recording + schedule the "no payment in 3min" dispatch
+  // Free-call timeout: save the recording, then dispatch immediately with video + Pix button
   useEffect(() => {
     if (phase !== "in_call" || !settings || !sessionId) return;
     if (freeEndedRef.current) return;
@@ -245,12 +247,12 @@ function CallPage() {
       freeEndedRef.current = true;
       modelVideoRef.current?.pause();
       setPhase("offer");
-      stopAndUploadRecording()
-        .then(() => streamRef.current?.getTracks().forEach((t) => t.stop()))
-        .catch(console.error);
-      endFreeFn({ data: { sessionId } }).catch(console.error);
-      // Schedule the "no_payment" dispatch (3 min); cancelled if they pay.
-      schedulePaymentFn({ data: { sessionId } }).catch(console.error);
+      void (async () => {
+        await stopAndUploadRecording();
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+        await endFreeFn({ data: { sessionId } });
+        await schedulePaymentFn({ data: { sessionId } });
+      })().catch(console.error);
     }
   }, [elapsed, endFreeFn, phase, sessionId, settings, stopAndUploadRecording, schedulePaymentFn]);
 
@@ -368,7 +370,7 @@ function CallPage() {
         // Paid call finished by hanging up → send post_payment dispatch now
         postPaymentDispatchFn({ data: { sessionId: sid } }).catch(console.error);
       } else if (wasMidCall) {
-        // Hung up before the free call ended → schedule hangup dispatch in 3 min
+        // Hung up before the free call ended → send hangup dispatch now
         scheduleHangupFn({ data: { sessionId: sid } }).catch(console.error);
       }
     }
@@ -388,14 +390,17 @@ function CallPage() {
     if (!sessionId) return;
     setPhase("paying");
     try {
+      if (phone.trim().length >= 8) {
+        await savePhoneFn({ data: { sessionId, phone: phone.trim() } });
+      }
       const res = await createPixFn({ data: { sessionId } });
       setPaymentInfo(res);
     } catch (err) {
       console.error(err);
-      toast.error("Não foi possível gerar o Pix agora. Tenta de novo.");
+      toast.error(err instanceof Error ? err.message : "Não foi possível gerar o Pix agora. Tenta de novo.");
       setPhase("offer");
     }
-  }, [sessionId, createPixFn]);
+  }, [sessionId, createPixFn, phone, savePhoneFn]);
 
   useEffect(() => {
     if (phase !== "paying" || !paymentInfo?.configured) return;
@@ -410,7 +415,7 @@ function CallPage() {
           if (status === "approved") {
             freeEndedRef.current = false;
             hasPaidRef.current = true;
-            // Cancel the scheduled "no_payment" dispatch
+            // Clear any pending dispatch marker after payment confirmation
             const sid = sessionIdRef.current;
             if (sid) cancelDispatchFn({ data: { sessionId: sid } }).catch(console.error);
             streamRef.current?.getVideoTracks().forEach((t) => (t.enabled = camOn));
@@ -425,7 +430,7 @@ function CallPage() {
             setPhase("in_call");
             return;
           }
-          if (status === "rejected" || status === "cancelled") {
+          if (status === "rejected" || status === "cancelled" || status === "failed") {
             toast.error("Pagamento não aprovado.");
             setPhase("offer");
             return;
@@ -677,7 +682,7 @@ function CallPage() {
                   <div className="text-lg font-semibold">Pagamento em configuração</div>
                   <div className="max-w-xs text-sm text-white/60">
                     O Pix ainda não está ativo. Peça ao administrador para
-                    conectar o Mercado Pago.
+                    conectar a Paradise.
                   </div>
                   <button
                     onClick={() => setPhase("offer")}
