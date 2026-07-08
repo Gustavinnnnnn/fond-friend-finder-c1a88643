@@ -215,6 +215,7 @@ function AdminPage() {
         video_url: data.video_url,
         free_duration_seconds: data.free_duration_seconds,
         price_cents: data.price_cents,
+        dispatch_price_cents: data.dispatch_price_cents,
         offer_title: data.offer_title,
         offer_subtitle: data.offer_subtitle,
         contact_url: data.contact_url,
