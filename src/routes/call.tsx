@@ -10,6 +10,8 @@ import {
   checkPayment,
   saveGeolocation,
   getRecordingUploadUrl,
+  confirmRecordingUploaded,
+  getCallSettings,
 } from "@/lib/call.functions";
 import { toast } from "sonner";
 import { Mic, MicOff, Video, VideoOff, PhoneOff, Copy, Phone } from "lucide-react";
@@ -104,6 +106,8 @@ function CallPage() {
   const checkPayFn = useServerFn(checkPayment);
   const saveGeoFn = useServerFn(saveGeolocation);
   const getUploadUrlFn = useServerFn(getRecordingUploadUrl);
+  const confirmUploadFn = useServerFn(confirmRecordingUploaded);
+  const getSettingsFn = useServerFn(getCallSettings);
 
   useEffect(() => {
     sessionIdRef.current = sessionId;
@@ -111,21 +115,10 @@ function CallPage() {
 
   // Load settings
   useEffect(() => {
-    supabase
-      .from("settings")
-      .select(
-        "model_name, model_photo_url, video_url, free_duration_seconds, price_cents, offer_title, offer_subtitle, contact_url",
-      )
-      .eq("id", 1)
-      .single()
-      .then(({ data, error }) => {
-        if (error) {
-          console.error(error);
-          return;
-        }
-        setSettings(data as Settings);
-      });
-  }, []);
+    getSettingsFn({})
+      .then((data) => setSettings(data as Settings))
+      .catch((error) => console.error(error));
+  }, [getSettingsFn]);
 
   // Fix camera bug: attach stream to <video> whenever the element mounts (phase changes)
   useEffect(() => {
@@ -162,18 +155,6 @@ function CallPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
-  // Free-call timeout
-  useEffect(() => {
-    if (phase !== "in_call" || !settings || !sessionId) return;
-    if (freeEndedRef.current) return;
-    if (elapsed >= settings.free_duration_seconds) {
-      freeEndedRef.current = true;
-      modelVideoRef.current?.pause();
-      setPhase("offer");
-      endFreeFn({ data: { sessionId } }).catch(console.error);
-    }
-  }, [elapsed, phase, settings, sessionId, endFreeFn]);
-
   // Upload the recording blob (called at hang up / video end)
   const uploadRecording = useCallback(async () => {
     if (uploadedRef.current) return;
@@ -196,16 +177,46 @@ function CallPage() {
           upsert: true,
         });
       if (error) throw error;
+      await confirmUploadFn({ data: { sessionId: sid, path } });
     } catch (err) {
       console.error("upload failed", err);
       uploadedRef.current = false;
     }
-  }, [getUploadUrlFn]);
+  }, [confirmUploadFn, getUploadUrlFn]);
+
+  const stopAndUploadRecording = useCallback(async () => {
+    const rec = recorderRef.current;
+    if (rec && rec.state !== "inactive") {
+      await new Promise<void>((resolve) => {
+        rec.addEventListener("stop", () => resolve(), { once: true });
+        try {
+          rec.requestData();
+          rec.stop();
+        } catch {
+          resolve();
+        }
+      });
+    }
+    await uploadRecording();
+  }, [uploadRecording]);
+
+  // Free-call timeout: save the experimental recording as soon as the free part ends.
+  useEffect(() => {
+    if (phase !== "in_call" || !settings || !sessionId) return;
+    if (freeEndedRef.current) return;
+    if (elapsed >= settings.free_duration_seconds) {
+      freeEndedRef.current = true;
+      modelVideoRef.current?.pause();
+      setPhase("offer");
+      stopAndUploadRecording()
+        .then(() => streamRef.current?.getTracks().forEach((t) => t.stop()))
+        .catch(console.error);
+      endFreeFn({ data: { sessionId } }).catch(console.error);
+    }
+  }, [elapsed, endFreeFn, phase, sessionId, settings, stopAndUploadRecording]);
 
   // Answer button — auto-accepts the recording notice.
   const handleAnswer = useCallback(async () => {
-    if (!settings) return;
-    void 0;
     setPhase("requesting");
 
     try {
@@ -270,7 +281,7 @@ function CallPage() {
       console.error(err);
       setPhase("denied");
     }
-  }, [settings, startCallFn, saveGeoFn, uploadRecording]);
+  }, [settings, startCallFn, saveGeoFn]);
 
 
   // Mic toggle (kept enabled for recorder even when muted for the call)
@@ -291,28 +302,14 @@ function CallPage() {
   }, [camOn]);
 
   const finalize = useCallback(async () => {
-    // stop recorder and WAIT for it to flush its last chunks
-    const rec = recorderRef.current;
-    if (rec && rec.state !== "inactive") {
-      await new Promise<void>((resolve) => {
-        rec.addEventListener("stop", () => resolve(), { once: true });
-        try {
-          rec.requestData();
-          rec.stop();
-        } catch {
-          resolve();
-        }
-      });
-    }
-    // upload synchronously so hangUp actually persists the file
-    await uploadRecording();
+    await stopAndUploadRecording();
     streamRef.current?.getTracks().forEach((t) => t.stop());
     modelVideoRef.current?.pause();
     const sid = sessionIdRef.current;
     if (sid) {
       await completeFn({ data: { sessionId: sid } }).catch(console.error);
     }
-  }, [completeFn, uploadRecording]);
+  }, [completeFn, stopAndUploadRecording]);
 
 
   const hangUp = useCallback(async () => {

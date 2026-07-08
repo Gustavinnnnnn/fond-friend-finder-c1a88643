@@ -2,7 +2,13 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
-import { getDashboard, getRecordingUrl } from "@/lib/admin.functions";
+import {
+  getAdminMediaUploadUrl,
+  getAdminSettings,
+  getDashboard,
+  getRecordingUrl,
+  updateAdminSettings,
+} from "@/lib/admin.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -41,6 +47,7 @@ import {
   CreditCard,
   Settings as SettingsIcon,
   Globe2,
+  RefreshCw,
 } from "lucide-react";
 
 type Settings = {
@@ -52,6 +59,11 @@ type Settings = {
   offer_title: string;
   offer_subtitle: string;
   contact_url: string | null;
+};
+
+type AdminSettingsResponse = Settings & {
+  model_photo_preview_url: string | null;
+  video_preview_url: string | null;
 };
 
 type Session = {
@@ -129,9 +141,14 @@ function AdminPage() {
   const [uploading, setUploading] = useState<"video" | "photo" | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [section, setSection] = useState<Section>("dashboard");
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
+  const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>(null);
 
   const dashboardFn = useServerFn(getDashboard);
   const recordingUrlFn = useServerFn(getRecordingUrl);
+  const getSettingsFn = useServerFn(getAdminSettings);
+  const updateSettingsFn = useServerFn(updateAdminSettings);
+  const uploadUrlFn = useServerFn(getAdminMediaUploadUrl);
 
   useEffect(() => {
     (async () => {
@@ -162,28 +179,41 @@ function AdminPage() {
     }
   }, [dashboardFn]);
 
+  const loadSettings = useCallback(async () => {
+    try {
+      const data = (await getSettingsFn({})) as AdminSettingsResponse;
+      setSettings({
+        model_name: data.model_name,
+        model_photo_url: data.model_photo_url,
+        video_url: data.video_url,
+        free_duration_seconds: data.free_duration_seconds,
+        price_cents: data.price_cents,
+        offer_title: data.offer_title,
+        offer_subtitle: data.offer_subtitle,
+        contact_url: data.contact_url,
+      });
+      setPhotoPreviewUrl(data.model_photo_preview_url);
+      setVideoPreviewUrl(data.video_preview_url);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Falha ao carregar configurações";
+      toast.error(msg);
+    }
+  }, [getSettingsFn]);
+
   useEffect(() => {
     if (!isAdmin) return;
-    supabase
-      .from("settings")
-      .select("*")
-      .eq("id", 1)
-      .single()
-      .then(({ data, error }) => {
-        if (error) toast.error(error.message);
-        else setSettings(data as Settings);
-      });
+    loadSettings();
     loadDashboard();
     const iv = setInterval(loadDashboard, 15000);
     return () => clearInterval(iv);
-  }, [isAdmin, loadDashboard]);
+  }, [isAdmin, loadDashboard, loadSettings]);
 
   const handleSave = async () => {
     if (!settings) return;
     setSaving(true);
-    const { error } = await supabase
-      .from("settings")
-      .update({
+    try {
+      await updateSettingsFn({
+        data: {
         model_name: settings.model_name,
         model_photo_url: settings.model_photo_url,
         video_url: settings.video_url,
@@ -192,28 +222,34 @@ function AdminPage() {
         offer_title: settings.offer_title,
         offer_subtitle: settings.offer_subtitle,
         contact_url: settings.contact_url,
-      })
-      .eq("id", 1);
-    setSaving(false);
-    if (error) toast.error(error.message);
-    else toast.success("Configurações salvas");
+        },
+      });
+      await loadSettings();
+      toast.success("Configurações salvas");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Erro ao salvar";
+      toast.error(msg);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleUpload = async (file: File, kind: "video" | "photo") => {
     setUploading(kind);
     try {
       const ext = file.name.split(".").pop() || (kind === "video" ? "mp4" : "jpg");
-      const path = `${kind}/${Date.now()}.${ext}`;
+      const { path, token } = await uploadUrlFn({ data: { kind, ext } });
       const { error } = await supabase.storage
         .from("media")
-        .upload(path, file, { upsert: true, contentType: file.type });
+        .uploadToSignedUrl(path, token, file, { upsert: true, contentType: file.type });
       if (error) throw error;
-      const { data } = supabase.storage.from("media").getPublicUrl(path);
-      const url = data.publicUrl;
+      const localPreview = URL.createObjectURL(file);
       if (kind === "video") {
-        setSettings((prev) => (prev ? { ...prev, video_url: url } : prev));
+        setSettings((prev) => (prev ? { ...prev, video_url: path } : prev));
+        setVideoPreviewUrl(localPreview);
       } else {
-        setSettings((prev) => (prev ? { ...prev, model_photo_url: url } : prev));
+        setSettings((prev) => (prev ? { ...prev, model_photo_url: path } : prev));
+        setPhotoPreviewUrl(localPreview);
       }
       toast.success(`${kind === "video" ? "Vídeo" : "Foto"} enviado. Clique em Salvar.`);
     } catch (err) {
@@ -283,15 +319,22 @@ function AdminPage() {
 
   return (
     <SidebarProvider>
-      <div className="flex min-h-screen w-full bg-neutral-950 text-white">
-        <Sidebar collapsible="icon">
-          <SidebarHeader className="px-4 py-4">
-            <div className="text-sm font-bold">Painel</div>
-            <div className="text-xs text-muted-foreground">Chamada</div>
+      <div className="flex min-h-screen w-full bg-[#080a0d] text-white">
+        <Sidebar collapsible="icon" className="border-r border-white/10 bg-[#0d1117]">
+          <SidebarHeader className="px-4 py-5">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500 text-sm font-black text-black">
+                7
+              </div>
+              <div className="min-w-0">
+                <div className="truncate text-sm font-bold">Seven Calls</div>
+                <div className="truncate text-xs text-white/45">Administração</div>
+              </div>
+            </div>
           </SidebarHeader>
           <SidebarContent>
             <SidebarGroup>
-              <SidebarGroupLabel>Menu</SidebarGroupLabel>
+              <SidebarGroupLabel className="text-white/35">Menu</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
                   {menu.map((m) => (
@@ -299,6 +342,7 @@ function AdminPage() {
                       <SidebarMenuButton
                         isActive={section === m.key}
                         onClick={() => setSection(m.key)}
+                        className="h-11 rounded-xl text-white/70 transition hover:bg-white/10 hover:text-white data-[active=true]:bg-emerald-500 data-[active=true]:font-semibold data-[active=true]:text-black"
                       >
                         {m.icon}
                         <span>{m.label}</span>
@@ -310,20 +354,34 @@ function AdminPage() {
             </SidebarGroup>
           </SidebarContent>
           <SidebarFooter className="p-3">
-            <Button variant="ghost" size="sm" onClick={handleSignOut} className="justify-start">
+            <Button variant="ghost" size="sm" onClick={handleSignOut} className="justify-start text-white/65 hover:bg-white/10 hover:text-white">
               <LogOut className="mr-2 h-4 w-4" /> Sair
             </Button>
           </SidebarFooter>
         </Sidebar>
 
         <div className="flex-1 flex flex-col min-w-0">
-          <header className="sticky top-0 z-10 flex h-14 items-center gap-3 border-b border-neutral-800 bg-neutral-950/80 px-4 backdrop-blur">
-            <SidebarTrigger className="text-white" />
-            <h1 className="text-lg font-semibold">{sectionTitle}</h1>
+          <header className="sticky top-0 z-10 flex h-16 items-center gap-3 border-b border-white/10 bg-[#080a0d]/90 px-4 backdrop-blur-xl sm:px-6">
+            <SidebarTrigger className="h-10 w-10 rounded-xl border border-white/10 bg-white/5 text-white hover:bg-white/10" />
+            <div className="min-w-0 flex-1">
+              <h1 className="truncate text-xl font-semibold">{sectionTitle}</h1>
+              <div className="text-xs text-white/45">Atualiza automaticamente a cada 15s</div>
+            </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                loadDashboard();
+                if (section === "settings") loadSettings();
+              }}
+              className="hidden bg-white/10 text-white hover:bg-white/15 sm:inline-flex"
+            >
+              <RefreshCw className="mr-2 h-4 w-4" /> Atualizar
+            </Button>
           </header>
 
-          <main className="flex-1 overflow-x-hidden px-4 py-6 sm:px-6">
-            <div className="mx-auto max-w-6xl">
+          <main className="flex-1 overflow-x-hidden px-4 py-6 sm:px-6 lg:px-8">
+            <div className="mx-auto max-w-7xl">
               {section === "dashboard" ? (
                 <DashboardView
                   stats={stats}
@@ -356,6 +414,8 @@ function AdminPage() {
                 <SettingsView
                   settings={settings}
                   setSettings={setSettings}
+                  photoPreviewUrl={photoPreviewUrl}
+                  videoPreviewUrl={videoPreviewUrl}
                   saving={saving}
                   uploading={uploading}
                   onSave={handleSave}
@@ -559,6 +619,8 @@ function LocationsView({ sessions }: { sessions: Session[] }) {
 function SettingsView({
   settings,
   setSettings,
+  photoPreviewUrl,
+  videoPreviewUrl,
   saving,
   uploading,
   onSave,
@@ -566,6 +628,8 @@ function SettingsView({
 }: {
   settings: Settings | null;
   setSettings: React.Dispatch<React.SetStateAction<Settings | null>>;
+  photoPreviewUrl: string | null;
+  videoPreviewUrl: string | null;
   saving: boolean;
   uploading: "video" | "photo" | null;
   onSave: () => void;
@@ -582,9 +646,9 @@ function SettingsView({
           <div>
             <div className="mb-2 text-xs text-white/60">Foto</div>
             <div className="relative h-24 w-24 overflow-hidden rounded-full bg-neutral-800">
-              {settings.model_photo_url ? (
+              {photoPreviewUrl ? (
                 <img
-                  src={settings.model_photo_url}
+                  src={photoPreviewUrl}
                   alt="Foto"
                   className="h-full w-full object-cover"
                 />
@@ -630,9 +694,9 @@ function SettingsView({
 
       <Card className="border-neutral-800 bg-neutral-900 p-5 text-white">
         <h2 className="mb-4 text-lg font-semibold">Vídeo da modelo</h2>
-        {settings.video_url ? (
+        {videoPreviewUrl ? (
           <video
-            src={settings.video_url}
+            src={videoPreviewUrl}
             controls
             className="mb-3 aspect-video w-full rounded-lg bg-black"
           />

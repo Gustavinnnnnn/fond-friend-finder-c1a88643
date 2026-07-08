@@ -1,22 +1,17 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-
-async function assertAdmin(ctx: { supabase: SupabaseClient; userId: string }) {
-  const { data, error } = await ctx.supabase.rpc("has_role", {
-    _user_id: ctx.userId,
-    _role: "admin",
-  });
-  if (error) throw new Error(error.message);
-  if (!data) throw new Error("Forbidden");
-}
 
 // ---------- Dashboard stats ----------
 export const getDashboard = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await assertAdmin(context);
+    const { data: isAdmin, error: roleError } = await context.supabase.rpc("has_role", {
+      _user_id: context.userId,
+      _role: "admin",
+    });
+    if (roleError) throw new Error(roleError.message);
+    if (!isAdmin) throw new Error("Forbidden");
     const { supabaseAdmin } = await import(
       "@/integrations/supabase/client.server"
     );
@@ -54,6 +49,94 @@ export const getDashboard = createServerFn({ method: "POST" })
     };
   });
 
+export const getAdminSettings = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data: isAdmin, error: roleError } = await context.supabase.rpc("has_role", {
+      _user_id: context.userId,
+      _role: "admin",
+    });
+    if (roleError) throw new Error(roleError.message);
+    if (!isAdmin) throw new Error("Forbidden");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data, error } = await supabaseAdmin
+      .from("settings")
+      .select("model_name, model_photo_url, video_url, free_duration_seconds, price_cents, offer_title, offer_subtitle, contact_url")
+      .eq("id", 1)
+      .single();
+    if (error) throw new Error(error.message);
+
+    const signMedia = async (value: string | null) => {
+      if (!value) return null;
+      if (value.startsWith("http")) return value;
+      const { data: signed, error: signError } = await supabaseAdmin.storage
+        .from("media")
+        .createSignedUrl(value, 60 * 60 * 6);
+      if (signError) return value;
+      return signed.signedUrl;
+    };
+
+    return {
+      ...data,
+      model_photo_preview_url: await signMedia(data.model_photo_url),
+      video_preview_url: await signMedia(data.video_url),
+    };
+  });
+
+export const updateAdminSettings = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) =>
+    z
+      .object({
+        model_name: z.string().min(1).max(80),
+        model_photo_url: z.string().nullable(),
+        video_url: z.string().nullable(),
+        free_duration_seconds: z.number().int().min(1).max(3600),
+        price_cents: z.number().int().min(0).max(1000000),
+        offer_title: z.string().min(1).max(120),
+        offer_subtitle: z.string().min(1).max(240),
+        contact_url: z.string().nullable(),
+      })
+      .parse(data),
+  )
+  .handler(async ({ data, context }) => {
+    const { data: isAdmin, error: roleError } = await context.supabase.rpc("has_role", {
+      _user_id: context.userId,
+      _role: "admin",
+    });
+    if (roleError) throw new Error(roleError.message);
+    if (!isAdmin) throw new Error("Forbidden");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin
+      .from("settings")
+      .update(data)
+      .eq("id", 1);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const getAdminMediaUploadUrl = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: { kind: "video" | "photo"; ext: string }) =>
+    z.object({ kind: z.enum(["video", "photo"]), ext: z.string().max(10) }).parse(data),
+  )
+  .handler(async ({ data, context }) => {
+    const { data: isAdmin, error: roleError } = await context.supabase.rpc("has_role", {
+      _user_id: context.userId,
+      _role: "admin",
+    });
+    if (roleError) throw new Error(roleError.message);
+    if (!isAdmin) throw new Error("Forbidden");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const cleanExt = data.ext.replace(/[^a-z0-9]/gi, "") || (data.kind === "video" ? "mp4" : "jpg");
+    const path = `${data.kind}/${Date.now()}-${crypto.randomUUID()}.${cleanExt}`;
+    const { data: signed, error } = await supabaseAdmin.storage
+      .from("media")
+      .createSignedUploadUrl(path);
+    if (error) throw new Error(error.message);
+    return { path, token: signed.token };
+  });
+
 // ---------- Signed URL to view a recording ----------
 export const getRecordingUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -61,7 +144,12 @@ export const getRecordingUrl = createServerFn({ method: "POST" })
     z.object({ path: z.string() }).parse(data),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context);
+    const { data: isAdmin, error: roleError } = await context.supabase.rpc("has_role", {
+      _user_id: context.userId,
+      _role: "admin",
+    });
+    if (roleError) throw new Error(roleError.message);
+    if (!isAdmin) throw new Error("Forbidden");
     const { supabaseAdmin } = await import(
       "@/integrations/supabase/client.server"
     );
