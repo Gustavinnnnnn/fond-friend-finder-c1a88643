@@ -59,6 +59,7 @@ type Settings = {
   video_url: string | null;
   free_duration_seconds: number;
   price_cents: number;
+  dispatch_price_cents: number;
   offer_title: string;
   offer_subtitle: string;
   contact_url: string | null;
@@ -214,6 +215,7 @@ function AdminPage() {
         video_url: data.video_url,
         free_duration_seconds: data.free_duration_seconds,
         price_cents: data.price_cents,
+        dispatch_price_cents: data.dispatch_price_cents,
         offer_title: data.offer_title,
         offer_subtitle: data.offer_subtitle,
         contact_url: data.contact_url,
@@ -257,6 +259,7 @@ function AdminPage() {
           video_url: settings.video_url,
           free_duration_seconds: settings.free_duration_seconds,
           price_cents: settings.price_cents,
+          dispatch_price_cents: settings.dispatch_price_cents,
           offer_title: settings.offer_title,
           offer_subtitle: settings.offer_subtitle,
           contact_url: settings.contact_url,
@@ -834,7 +837,7 @@ function SettingsView({
             />
           </div>
           <div>
-            <Label className="text-white/80">Valor (R$)</Label>
+            <Label className="text-white/80">Valor da chamada (R$)</Label>
             <Input
               type="number"
               step="0.01"
@@ -848,6 +851,25 @@ function SettingsView({
               }
               className="mt-1 border-neutral-700 bg-neutral-800 text-white"
             />
+          </div>
+          <div>
+            <Label className="text-white/80">Valor do disparo (R$)</Label>
+            <Input
+              type="number"
+              step="0.01"
+              min={0}
+              value={(settings.dispatch_price_cents / 100).toFixed(2)}
+              onChange={(e) =>
+                setSettings({
+                  ...settings,
+                  dispatch_price_cents: Math.round(parseFloat(e.target.value || "0") * 100),
+                })
+              }
+              className="mt-1 border-neutral-700 bg-neutral-800 text-white"
+            />
+            <p className="mt-1 text-xs text-white/45">
+              Cobrado quando o lead clica em "Continuar minha compra" no Telegram.
+            </p>
           </div>
           <div className="sm:col-span-2">
             <Label className="text-white/80">Título da oferta</Label>
