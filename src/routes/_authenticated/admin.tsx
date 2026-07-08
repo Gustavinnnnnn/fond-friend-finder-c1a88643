@@ -59,6 +59,7 @@ type Settings = {
   video_url: string | null;
   free_duration_seconds: number;
   price_cents: number;
+  dispatch_price_cents: number;
   offer_title: string;
   offer_subtitle: string;
   contact_url: string | null;
