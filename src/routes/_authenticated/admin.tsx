@@ -389,6 +389,21 @@ function AdminPage() {
         ["--sidebar-primary-foreground" as string]: "#000000",
       } as React.CSSProperties}
     >
+      {/* Portal-based mobile sheet doesn't inherit the sidebar CSS vars above,
+          so we set them globally for the mobile sidebar sheet too. */}
+      <style>{`
+        [data-sidebar="sidebar"][data-mobile="true"] {
+          --sidebar: #0d1117;
+          --sidebar-foreground: #ffffff;
+          --sidebar-accent: rgba(255,255,255,0.08);
+          --sidebar-accent-foreground: #ffffff;
+          --sidebar-border: rgba(255,255,255,0.1);
+          --sidebar-ring: #10b981;
+          --sidebar-primary: #10b981;
+          --sidebar-primary-foreground: #000000;
+          color: #ffffff;
+        }
+      `}</style>
       <div className="flex min-h-screen w-full bg-[#080a0d] text-white">
         <Sidebar collapsible="icon" className="border-r border-white/10">
           <SidebarHeader className="px-4 py-5">
